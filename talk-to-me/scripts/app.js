@@ -48,8 +48,14 @@ export class TalkToMeApp {
     root.style.left = pos.left;
     root.style.top = pos.top;
 
-    ttmAdd(root, this.createHeader());
-    ttmAdd(root, this.createBody());
+    try {
+      ttmAdd(root, this.createHeader());
+      ttmAdd(root, this.createBody());
+    } catch (err) {
+      console.error("TalkToMe UI failed to open.", err);
+      ui.notifications.error("TalkToMe UI failed to open. Check the console for details.");
+      return;
+    }
 
     document.body.appendChild(root);
     this.element = root;
@@ -188,6 +194,46 @@ export class TalkToMeApp {
     return select;
   }
 
+createImagePickerField(labelText, input) {
+  const group = ttmMake("div", null, "form-group ttm-image-picker-group");
+  const label = ttmMake("label", labelText);
+  const row = ttmMake("div", null, "ttm-image-picker-row");
+
+  const browse = ttmMake("button", "🔍", "ttm-icon-button");
+  browse.type = "button";
+  browse.title = "Browse Foundry files";
+
+  browse.addEventListener("click", async () => {
+    try {
+      const picker = new FilePicker({
+        type: "image",
+        current: input.value || "",
+        callback: path => {
+          input.value = path;
+        }
+      });
+
+      picker.render(true);
+    } catch (err) {
+      console.error("TalkToMe file picker failed:", err);
+      ttmNotice("error", "Could not open the Foundry file picker.");
+    }
+  });
+
+  ttmAdd(row, input);
+  ttmAdd(row, browse);
+  ttmAdd(group, label);
+  ttmAdd(group, row);
+
+  return group;
+}
+
+createTemplateField(labelText, input, templates) {
+  const field = this.createField(labelText, input);
+  field.dataset.ttmTemplateField = Array.isArray(templates) ? templates.join(",") : String(templates ?? "");
+  return field;
+}
+
   createCheckbox(id, text, checked = false) {
     const input = ttmMake("input");
     input.id = id;
@@ -233,6 +279,17 @@ export class TalkToMeApp {
       card.innerText = tok ? `Using: ${tok.name}` : "No token selected, targeted, or picked from the scene.";
     }
   }
+
+toggleSwitchClickActivation() {
+  if (!this.element) return;
+
+  const trigger = this.element.querySelector("#ttm-tile-trigger");
+  const group = this.element.querySelector("[data-ttm-switch-click-group='true']");
+  if (!trigger || !group) return;
+
+  const template = this.element.querySelector("#ttm-tile-template")?.value ?? "speech";
+            group.hidden = trigger.value !== "switch" && template !== "switch";
+}
 
   createSpeechPanel() {
     const panel = ttmMake("section", null, "ttm-panel");
@@ -302,7 +359,6 @@ export class TalkToMeApp {
     ttmAdd(buttons, activateTokens);
     ttmAdd(buttons, say);
     ttmAdd(buttons, save);
-
     ttmAdd(panel, this.createHint("Pick a token from the scene, or leave it on auto and select/target a token on the canvas."));
     ttmAdd(panel, tokenName);
     ttmAdd(panel, this.createField("Token", tokenSelect));
@@ -321,7 +377,25 @@ export class TalkToMeApp {
     panel.dataset.panel = "tiles";
     panel.hidden = this.activeTab !== "tiles";
 
-    const tableSelect = this.createTableSelect("ttm-tile-table");
+    const template = ttmMake("select");
+template.id = "ttm-tile-template";
+
+for (const [value, label] of [
+  ["speech", "Speech Bubble"],
+  ["switch", "Switch Activation"],
+  ["light", "Light Activation"],
+  ["trap", "Trap Activation"],
+  ["teleport", "Teleport Activation"],
+  ["reset", "Create Reset Tile"]
+]) {
+  const opt = ttmMake("option", label);
+  opt.value = value;
+  ttmAdd(template, opt);
+}
+
+template.addEventListener("change", () => this.toggleTemplateFields());
+
+const tableSelect = this.createTableSelect("ttm-tile-table");
     const subjectToken = this.createTokenSelect("ttm-tile-subject-token");
     subjectToken.dataset.ttmTokenSelect = "true";
 
@@ -333,12 +407,109 @@ export class TalkToMeApp {
     npc.type = "text";
     npc.placeholder = "Optional override, e.g. Guard";
 
+    const tileImage = ttmMake("input");
+    tileImage.id = "ttm-tile-image";
+    tileImage.type = "text";
+    tileImage.placeholder = "icons/svg/sound.svg or modules/talk-to-me/images/switch.webp";
+
+const inactiveImage = ttmMake("input");
+inactiveImage.id = "ttm-inactive-image";
+inactiveImage.type = "text";
+inactiveImage.placeholder = "Default/off image path";
+
+const activeImage = ttmMake("input");
+activeImage.id = "ttm-active-image";
+activeImage.type = "text";
+activeImage.placeholder = "Active/on image path";
+
+const doorWallId = ttmMake("input");
+doorWallId.id = "ttm-door-wall-id";
+doorWallId.type = "text";
+doorWallId.placeholder = "Linked door wall id";
+
+const doorAction = ttmMake("select");
+doorAction.id = "ttm-door-action";
+for (const [value, label] of [["toggle", "Toggle door"], ["open", "Open door"], ["close", "Close door"], ["lock", "Lock door"]]) {
+  const opt = ttmMake("option", label);
+  opt.value = value;
+  ttmAdd(doorAction, opt);
+}
+
+const targetTileId = ttmMake("input");
+targetTileId.id = "ttm-target-tile-id";
+targetTileId.type = "text";
+targetTileId.placeholder = "Optional linked tile id";
+
+const lightDim = ttmMake("input");
+lightDim.type = "number";
+lightDim.value = 20;
+
+const lightBright = ttmMake("input");
+lightBright.type = "number";
+lightBright.value = 10;
+
+const lightColor = ttmMake("input");
+lightColor.type = "text";
+lightColor.value = "#ffffff";
+
+const lightAlpha = ttmMake("input");
+lightAlpha.type = "number";
+lightAlpha.step = "0.1";
+lightAlpha.value = 0.5;
+
+const saveAbility = ttmMake("select");
+for (const value of ["str", "dex", "con", "int", "wis", "cha"]) {
+  const opt = ttmMake("option", value.toUpperCase());
+  opt.value = value;
+  ttmAdd(saveAbility, opt);
+}
+
+const saveDC = ttmMake("input");
+saveDC.type = "number";
+saveDC.value = 10;
+
+const targetPlayers = ttmMake("input");
+targetPlayers.type = "text";
+targetPlayers.placeholder = "Player names, comma separated";
+
+const teleportX = ttmMake("input");
+teleportX.type = "number";
+teleportX.placeholder = "Target X";
+
+const teleportY = ttmMake("input");
+teleportY.type = "number";
+teleportY.placeholder = "Target Y";
+
     const trigger = ttmMake("select");
-    for (const [value, label] of [["enter", "Token enters tile"], ["manual", "Manual only"]]) {
-      const opt = ttmMake("option", label);
+    trigger.id = "ttm-tile-trigger";
+    trigger.addEventListener("change", () => { this.toggleSwitchClickActivation(); this.toggleTemplateFields(); });
+
+    for (const [value, label] of [
+  ["enter", "Token enters tile"],
+  ["exit", "Token exits tile"],
+  ["switch", "Switch activated"],
+  ["trap", "Trap triggered"],
+  ["effect", "Magic spell/effect"],
+  ["manual", "Manual only"]
+]) {
+  const opt = ttmMake("option", label);
       opt.value = value;
       ttmAdd(trigger, opt);
     }
+
+const clickActivation = ttmMake("select");
+clickActivation.id = "ttm-tile-click-activation";
+
+for (const [value, label] of [
+  ["left", "Left click"],
+  ["double-left", "Double left click"],
+  ["right", "Right click"],
+  ["any", "Any click"]
+]) {
+  const opt = ttmMake("option", label);
+  opt.value = value;
+  ttmAdd(clickActivation, opt);
+}
 
     const mode = ttmMake("select");
     for (const [value, label] of [["table", "Roll from table"], ["custom", "Use custom text"]]) {
@@ -382,7 +553,41 @@ export class TalkToMeApp {
         zoomToSpeaker: zoomToSpeaker.input.checked,
         hidden: hidden.input.checked,
         width: Number(width.value || 200),
-        height: Number(height.value || 200)
+        height: Number(height.value || 200),
+        clickActivation: clickActivation.value,
+        tileImage: tileImage.value.trim(),
+    template: template.value,
+    activeImage: activeImage.value.trim(),
+    inactiveImage: inactiveImage.value.trim(),
+    doorWallId: doorWallId.value.trim(),
+    doorAction: doorAction.value,
+    targetTileId: targetTileId.value.trim(),
+    lightDim: Number(lightDim.value || 20),
+    lightBright: Number(lightBright.value || 10),
+    lightColor: lightColor.value.trim(),
+    lightAlpha: Number(lightAlpha.value || 0.5),
+    saveAbility: saveAbility.value,
+    saveDC: Number(saveDC.value || 10),
+    targetPlayers: targetPlayers.value.trim(),
+    teleportX: teleportX.value,
+    teleportY: teleportY.value,
+        clickActivation: clickActivation.value,
+        tileImage: tileImage.value.trim(),
+    template: template.value,
+    activeImage: activeImage.value.trim(),
+    inactiveImage: inactiveImage.value.trim(),
+    doorWallId: doorWallId.value.trim(),
+    doorAction: doorAction.value,
+    targetTileId: targetTileId.value.trim(),
+    lightDim: Number(lightDim.value || 20),
+    lightBright: Number(lightBright.value || 10),
+    lightColor: lightColor.value.trim(),
+    lightAlpha: Number(lightAlpha.value || 0.5),
+    saveAbility: saveAbility.value,
+    saveDC: Number(saveDC.value || 10),
+    targetPlayers: targetPlayers.value.trim(),
+    teleportX: teleportX.value,
+    teleportY: teleportY.value
       });
 
       if (doc) this.refreshManagedTileList();
@@ -398,11 +603,28 @@ export class TalkToMeApp {
     const list = ttmMake("div", null, "ttm-managed-list");
     list.id = "ttm-managed-tiles";
 
-    ttmAdd(panel, this.createHint("Place trigger tiles that make a chosen NPC speak from a RollTable or custom text."));
+    ttmAdd(panel, this.createField("Template", template));
+    ttmAdd(panel, this.createHint("Create preset-style speech tiles. TalkToMe stores its own speech settings and also writes MATT-friendly trigger/action data when Monk's Active Tile Triggers is active. You can set a custom tile image path for switches, traps, effects, and speech markers. Switch tiles can activate on left click, double left click, right click, or any click."));
     ttmAdd(panel, this.createField("Speaking NPC token", subjectToken));
     ttmAdd(panel, this.createField("Tile name", name));
     ttmAdd(panel, this.createField("NPC chat name override", npc));
+        ttmAdd(panel, this.createImagePickerField("Tile image", tileImage));
+ttmAdd(panel, this.createTemplateField("Inactive/default image", inactiveImage, ["switch", "light", "trap", "teleport", "reset"]));
+ttmAdd(panel, this.createTemplateField("Active image", activeImage, ["switch", "light", "trap", "teleport", "reset"]));
+ttmAdd(panel, this.createTemplateField("Door wall id", doorWallId, ["switch"]));
+ttmAdd(panel, this.createTemplateField("Door action", doorAction, ["switch"]));
+ttmAdd(panel, this.createTemplateField("Linked tile id", targetTileId, ["switch"]));
+ttmAdd(panel, this.createTemplateField("Light dim radius", lightDim, ["light"]));
+ttmAdd(panel, this.createTemplateField("Light bright radius", lightBright, ["light"]));
+ttmAdd(panel, this.createTemplateField("Light colour", lightColor, ["light"]));
+ttmAdd(panel, this.createTemplateField("Light alpha", lightAlpha, ["light"]));
+ttmAdd(panel, this.createTemplateField("Trap save ability", saveAbility, ["trap"]));
+ttmAdd(panel, this.createTemplateField("Trap save DC", saveDC, ["trap"]));
+ttmAdd(panel, this.createTemplateField("Target players", targetPlayers, ["trap"]));
+ttmAdd(panel, this.createTemplateField("Teleport X", teleportX, ["teleport"]));
+ttmAdd(panel, this.createTemplateField("Teleport Y", teleportY, ["teleport"]));
     ttmAdd(panel, this.createField("Trigger", trigger));
+    ttmAdd(panel, this.createField("Switch click activation", clickActivation));
     ttmAdd(panel, this.createField("Speech mode", mode));
     ttmAdd(panel, this.createField("RollTable", tableSelect));
     ttmAdd(panel, this.createField("Custom speech", text));

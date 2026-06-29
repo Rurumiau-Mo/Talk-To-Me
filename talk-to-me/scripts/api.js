@@ -8,6 +8,7 @@ import { TalkToMeApp } from "./app.js";
 import { TalkToMeBubbleManager } from "./bubbles.js";
 
 import { ttmIsGM, ttmModuleActive, ttmNotice } from "./helpers.js";
+import { activateUtilityTemplate } from "./utilities.js";
 
 import {
   broadcastSpeech,
@@ -23,8 +24,11 @@ import {
 import { generateOpenMacro, generateScript } from "./macros.js";
 
 import {
+  TTM_ACTION_TRIGGERS,
+  TTM_MOVEMENT_TRIGGERS,
   createSpeechTile,
   getManagedSpeechTiles,
+  pointInTile,
   tileContainsToken,
   triggerSpeechTile
 } from "./tiles.js";
@@ -36,6 +40,11 @@ export class TalkToMe {
 
     this.entryState = new Map();
     this.entryCooldown = new Map();
+    this.triggerScanInterval = null;
+    this.clickListenersActive = false;
+    this.boundSwitchLeftClick = event => this.handleSwitchTileClick("left", event);
+    this.boundSwitchDoubleLeftClick = event => this.handleSwitchTileClick("double-left", event);
+    this.boundSwitchRightClick = event => this.handleSwitchTileClick("right", event);
   }
 
   initBubbles() {
@@ -86,7 +95,10 @@ export class TalkToMe {
     return createSpeechTile(args);
   }
 
-  triggerSpeechTile(tileId, tokenLike = null, overrides = {}) {
+  async triggerSpeechTile(tileId, tokenLike = null, overrides = {}) {
+    const doc = canvas.scene?.tiles?.get(tileId);
+    if (doc) await activateUtilityTemplate(doc, tokenLike, overrides);
+
     return triggerSpeechTile(this, tileId, tokenLike, overrides);
   }
 
@@ -146,36 +158,123 @@ export class TalkToMe {
     return finalText;
   }
 
-  async checkEntryTriggersForToken(tokenDoc) {
-    if (!ttmIsGM()) return;
-    if (!canvas.scene || !tokenDoc) return;
 
-    const tokenId = tokenDoc.id ?? tokenDoc._id;
-    if (!tokenId) return;
+startTriggerScanner() {
+  this.stopTriggerScanner();
 
-    for (const tileDoc of this.getManagedSpeechTiles()) {
-      const flags = tileDoc.getFlag(TTM_ID, "speech");
-      if (!flags?.managed || flags.trigger !== "enter") continue;
+  if (!ttmIsGM()) return;
+
+  const interval = Math.max(100, Number(game.settings.get(TTM_ID, "triggerScanInterval") ?? 200));
+
+  this.triggerScanInterval = window.setInterval(() => {
+    this.scanMovementTriggers();
+  }, interval);
+
+  // Prime the state immediately.
+  this.scanMovementTriggers({ primeOnly: true });
+}
+
+stopTriggerScanner() {
+  if (!this.triggerScanInterval) return;
+
+  window.clearInterval(this.triggerScanInterval);
+  this.triggerScanInterval = null;
+    this.clickListenersActive = false;
+    this.boundSwitchLeftClick = event => this.handleSwitchTileClick("left", event);
+    this.boundSwitchDoubleLeftClick = event => this.handleSwitchTileClick("double-left", event);
+    this.boundSwitchRightClick = event => this.handleSwitchTileClick("right", event);
+}
+
+async scanMovementTriggers({ primeOnly = false } = {}) {
+  if (!ttmIsGM()) return;
+  if (!canvas?.scene || !canvas.tokens) return;
+
+  const tokens = canvas.tokens.placeables ?? [];
+  const tiles = this.getManagedSpeechTiles()
+    .filter(tile => TTM_MOVEMENT_TRIGGERS.includes(tile.getFlag(TTM_ID, "speech")?.trigger));
+
+  for (const tileDoc of tiles) {
+    const flags = tileDoc.getFlag(TTM_ID, "speech");
+    if (!flags?.managed) continue;
+
+    for (const token of tokens) {
+      if (!token?.document) continue;
+
+      const tokenDoc = token.document;
+      const tokenId = tokenDoc.id ?? tokenDoc._id;
+      if (!tokenId) continue;
 
       const stateKey = `${canvas.scene.id}.${tileDoc.id}.${tokenId}`;
-      const inside = tileContainsToken(tileDoc, tokenDoc);
+      const insideNow = tileContainsToken(tileDoc, tokenDoc);
+      const hadState = this.entryState.has(stateKey);
       const wasInside = this.entryState.get(stateKey) === true;
 
-      this.entryState.set(stateKey, inside);
+      if (!hadState || primeOnly) {
+        this.entryState.set(stateKey, insideNow);
+        continue;
+      }
 
-      if (!inside || wasInside) continue;
+      let shouldTrigger = false;
+
+      if (flags.trigger === "enter") shouldTrigger = !wasInside && insideNow;
+      if (flags.trigger === "exit") shouldTrigger = wasInside && !insideNow;
+
+      this.entryState.set(stateKey, insideNow);
+
+      if (!shouldTrigger) continue;
 
       const now = Date.now();
       const last = this.entryCooldown.get(stateKey) ?? 0;
-      if (now - last < 750) continue;
+      const cooldown = Number(game.settings.get(TTM_ID, "triggerCooldown") ?? 1000);
+
+      if (now - last < cooldown) continue;
 
       this.entryCooldown.set(stateKey, now);
-      await this.triggerSpeechTile(tileDoc.id, tokenDoc.object ?? canvas.tokens.get(tokenId));
+      await this.triggerSpeechTile(tileDoc.id, token);
     }
   }
+}
 
-  resetEntryHistory() {
-    this.entryState.clear();
-    this.entryCooldown.clear();
+async triggerActionTiles(triggerType = "manual", tokenLike = null, overrides = {}) {
+  if (!TTM_ACTION_TRIGGERS.includes(triggerType)) {
+    ttmNotice("warn", `Unknown TalkToMe action trigger: ${triggerType}`);
+    return [];
   }
+
+  const matchingTiles = this.getManagedSpeechTiles()
+    .filter(tile => tile.getFlag(TTM_ID, "speech")?.trigger === triggerType);
+
+  const results = [];
+
+  for (const tile of matchingTiles) {
+    results.push(await this.triggerSpeechTile(tile.id, tokenLike, overrides));
+  }
+
+  return results;
+}
+
+async triggerSpeechTileByCategory(tileId, category = "manual", tokenLike = null, overrides = {}) {
+  const doc = canvas.scene?.tiles?.get(tileId);
+  if (!doc) return ttmNotice("warn", "Speech tile not found.");
+
+  const flags = doc.getFlag(TTM_ID, "speech");
+  if (!flags?.managed) return ttmNotice("warn", "That tile is not a TalkToMe speech tile.");
+
+  if (flags.trigger !== category && category !== "manual") {
+    return ttmNotice("warn", `This speech tile is set to ${flags.trigger}, not ${category}.`);
+  }
+
+  return this.triggerSpeechTile(tileId, tokenLike, overrides);
+}
+
+async checkEntryTriggersForToken() {
+  await this.scanMovementTriggers();
+}
+
+resetEntryHistory() {
+  this.entryState.clear();
+  this.entryCooldown.clear();
+  this.scanMovementTriggers({ primeOnly: true });
+}
+
 }

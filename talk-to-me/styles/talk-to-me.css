@@ -210,3 +210,50 @@
     transform: translate(-50%, calc(-100% - 22px)) scale(1);
   }
 }
+
+/* TalkToMe v0.4.0: speech bubbles now render in PIXI, so .ttm-world-bubble CSS is kept only for older fallback builds. */
+
+#talk-to-me-window .ttm-image-picker-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+#talk-to-me-window .ttm-image-picker-row input {
+  flex: 1;
+}
+
+#talk-to-me-window .ttm-icon-button {
+  flex: 0 0 34px;
+  width: 34px;
+  min-width: 34px;
+  text-align: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+
+#talk-to-me-window [data-ttm-template-field][hidden],
+#talk-to-me-window [data-ttm-switch-click-group][hidden] {
+  display: none;
+}
+
+
+#talk-to-me-floating-launcher {
+  position: fixed;
+  left: 12px;
+  bottom: 84px;
+  z-index: 10000;
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  border: 1px solid #000;
+  background: rgba(30, 30, 30, 0.95);
+  color: #f0f0e0;
+  box-shadow: 0 0 10px #000;
+  cursor: pointer;
+}
+
+#talk-to-me-floating-launcher:hover {
+  filter: brightness(1.25);
+}

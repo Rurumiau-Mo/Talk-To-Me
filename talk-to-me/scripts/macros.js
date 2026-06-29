@@ -92,3 +92,22 @@ export function generateOpenMacro() {
     'api.open();'
   ].join("\n");
 }
+
+
+export function generateMattPresetScript({ trigger = "manual", postChat = false, zoomToSpeaker = false } = {}) {
+  return [
+    'const api = game.talkToMe ?? game.modules.get("talk-to-me")?.api;',
+    'if (!api?.triggerSpeechTileByCategory) return ui.notifications.warn("TalkToMe is not ready.");',
+    '',
+    'const arg0 = args?.[0] ?? {};',
+    'const ttmTile = arg0.tile ?? tile ?? canvas.tiles?.controlled?.[0] ?? null;',
+    'const ttmTileId = ttmTile?.document?.id ?? ttmTile?.id ?? arg0.tileId ?? null;',
+    'const triggeringToken = arg0.token ?? arg0.tokens?.[0] ?? arg0.triggeringToken ?? token ?? null;',
+    '',
+    'if (!ttmTileId) return ui.notifications.warn("TalkToMe could not find the triggering tile.");',
+    `await api.triggerSpeechTileByCategory(ttmTileId, ${JSON.stringify(trigger)}, triggeringToken, {`,
+    `  postChat: ${postChat ? "true" : "false"},`,
+    `  zoomToSpeaker: ${zoomToSpeaker ? "true" : "false"}`,
+    '});'
+  ].join("\\n");
+}

@@ -1,22 +1,34 @@
-// =============================================================================
-// TalkToMe entry point
-// =============================================================================
-// Registers settings/hooks at init, then exposes the API at ready.
+const TTM_ID = "talk-to-me";
+const TTM_TITLE = "TalkToMe";
 
-import { TTM_ID, TTM_TITLE } from "./constants.js";
-import { TalkToMe } from "./api.js";
-import { registerHooks, registerSocket } from "./hooks.js";
-import { registerSettings } from "./settings.js";
+function createFallbackButton() {
+  if (!game.user?.isGM) return;
+  if (document.getElementById("talk-to-me-floating-launcher")) return;
 
-Hooks.once("init", () => {
-  registerSettings();
-  registerHooks();
-});
+  const button = document.createElement("button");
+  button.id = "talk-to-me-floating-launcher";
+  button.type = "button";
+  button.title = "Open TalkToMe";
+  button.innerHTML = "💬";
+  button.style.position = "fixed";
+  button.style.left = "12px";
+  button.style.bottom = "84px";
+  button.style.zIndex = "10000";
+  button.style.width = "42px";
+  button.style.height = "42px";
+  button.style.fontSize = "20px";
+  button.addEventListener("click", () => {
+    const api = game.talkToMe ?? game.modules.get(TTM_ID)?.api;
+    if (api?.open) api.open();
+    else ui.notifications.warn("TalkToMe is not ready.");
+  });
 
-Hooks.once("ready", () => {
-  const api = new TalkToMe();
+  document.body.appendChild(button);
+}
 
+function assignApi(api) {
   game.talkToMe = api;
+  window.talkToMeOpen = () => api.open();
 
   const mod = game.modules.get(TTM_ID);
   if (mod) {
@@ -29,9 +41,63 @@ Hooks.once("ready", () => {
       });
     }
   }
+}
 
-  api.initBubbles();
-  registerSocket();
+async function registerModuleHooksAndSettings() {
+  try {
+    const hooks = await import("./hooks.js");
+    hooks.registerHooks?.();
+  } catch (err) {
+    console.error(`${TTM_TITLE} hook module failed to load.`, err);
+  }
 
-  console.log(`${TTM_TITLE} ready.`, api);
+  try {
+    const settings = await import("./settings.js");
+    settings.registerSettings?.();
+  } catch (err) {
+    console.error(`${TTM_TITLE} settings module failed to load.`, err);
+  }
+}
+
+async function installFullApi() {
+  const apiModule = await import("./api.js");
+  const api = new apiModule.TalkToMe();
+
+  assignApi(api);
+
+  try {
+    api.initBubbles?.();
+  } catch (err) {
+    console.warn(`${TTM_TITLE} bubbles failed to initialise.`, err);
+  }
+
+  try {
+    const hooks = await import("./hooks.js");
+    hooks.registerSocket?.();
+  } catch (err) {
+    console.warn(`${TTM_TITLE} socket registration failed.`, err);
+  }
+
+  api.startTriggerScanner?.();
+  api.startSwitchClickListeners?.();
+
+  console.log(`${TTM_TITLE} full API ready.`, api);
+}
+
+Hooks.once("init", () => {
+  registerModuleHooksAndSettings();
+});
+
+Hooks.once("ready", async () => {
+  try {
+    createFallbackButton();
+    await installFullApi();
+  } catch (err) {
+    console.error(`${TTM_TITLE} failed to initialise.`, err);
+    ui.notifications.error("TalkToMe failed to initialise. Check the console for details.");
+  }
+});
+
+Hooks.on("canvasReady", () => {
+  createFallbackButton();
 });

@@ -1,59 +1,70 @@
-// =============================================================================
-// TalkToMe Foundry hooks and socket listener
-// =============================================================================
-// Adds toolbar buttons, refreshes UI state, checks entry tiles, and receives speech sockets.
-
 import { TTM_ID, TTM_SOCKET_ACTIONS } from "./constants.js";
+
+function openTalkToMe() {
+  const api = game.talkToMe ?? game.modules.get(TTM_ID)?.api;
+  if (api?.open) return api.open();
+  ui.notifications.warn("TalkToMe is not ready.");
+}
+
+function addToolbarTool(controls) {
+  const tool = {
+    name: "talk-to-me",
+    title: "TalkToMe",
+    label: "TalkToMe",
+    icon: "fa-solid fa-comment-dots",
+    order: 999,
+    button: true,
+    visible: game.user?.isGM === true,
+    onChange: openTalkToMe
+  };
+
+  if (controls?.tokens?.tools) controls.tokens.tools["talk-to-me"] = tool;
+  if (controls?.tiles?.tools) controls.tiles.tools["talk-to-me"] = { ...tool, title: "TalkToMe Speech Tiles" };
+
+  if (Array.isArray(controls)) {
+    for (const name of ["tokens", "token", "tiles", "tile"]) {
+      const control = controls.find(c => c.name === name);
+      if (!control) continue;
+      control.tools ??= [];
+      if (Array.isArray(control.tools) && !control.tools.some(t => t.name === "talk-to-me")) control.tools.push(tool);
+    }
+  }
+}
+
+function createFloatingButton() {
+  if (!game.user?.isGM) return;
+  if (document.getElementById("talk-to-me-floating-launcher")) return;
+
+  const button = document.createElement("button");
+  button.id = "talk-to-me-floating-launcher";
+  button.type = "button";
+  button.title = "Open TalkToMe";
+  button.innerHTML = "💬";
+  button.addEventListener("click", openTalkToMe);
+  document.body.appendChild(button);
+}
 
 export function registerHooks() {
   Hooks.on("getSceneControlButtons", controls => {
-    if (!game.user?.isGM) return;
-
-    const button = {
-      name: "talk-to-me",
-      title: "TalkToMe",
-      icon: "fa-solid fa-comment-dots",
-      order: 999,
-      button: true,
-      visible: true,
-      onChange: () => game.talkToMe?.open()
-    };
-
-    const tokenControl = Array.isArray(controls)
-      ? controls.find(c => c.name === "token" || c.name === "tokens")
-      : controls.tokens ?? controls.token;
-
-    if (tokenControl) {
-      tokenControl.tools ??= Array.isArray(tokenControl.tools) ? [] : {};
-      if (Array.isArray(tokenControl.tools)) {
-        if (!tokenControl.tools.some(t => t.name === "talk-to-me")) tokenControl.tools.push(button);
-      } else {
-        tokenControl.tools["talk-to-me"] = button;
-      }
-    }
-
-    const tileControl = Array.isArray(controls)
-      ? controls.find(c => c.name === "tiles" || c.name === "tile")
-      : controls.tiles ?? controls.tile;
-
-    if (tileControl) {
-      tileControl.tools ??= Array.isArray(tileControl.tools) ? [] : {};
-      const tileButton = { ...button, title: "TalkToMe Speech Tiles" };
-
-      if (Array.isArray(tileControl.tools)) {
-        if (!tileControl.tools.some(t => t.name === "talk-to-me")) tileControl.tools.push(tileButton);
-      } else {
-        tileControl.tools["talk-to-me"] = tileButton;
-      }
+    try {
+      addToolbarTool(controls);
+    } catch (err) {
+      console.error("TalkToMe toolbar registration failed.", err);
     }
   });
 
+  Hooks.once("ready", () => window.setTimeout(createFloatingButton, 250));
+  Hooks.on("renderSceneControls", () => window.setTimeout(createFloatingButton, 100));
+
   Hooks.on("canvasReady", () => {
+    window.setTimeout(createFloatingButton, 100);
     game.talkToMe?.resetEntryHistory?.();
+    game.talkToMe?.startTriggerScanner?.();
+    game.talkToMe?.startSwitchClickListeners?.();
 
     if (game.talkToMe?.app?.element) {
-      game.talkToMe.app.refreshManagedTileList();
-      game.talkToMe.app.refreshTokenSelectors();
+      game.talkToMe.app.refreshManagedTileList?.();
+      game.talkToMe.app.refreshTokenSelectors?.();
     }
 
     game.talkToMe?.bubbles?.clear?.();
@@ -61,40 +72,32 @@ export function registerHooks() {
   });
 
   for (const hookName of ["controlToken", "targetToken", "createToken", "deleteToken"]) {
+    Hooks.on(hookName, () => game.talkToMe?.app?.element && game.talkToMe.app.refreshTokenSelectors?.());
+  }
+
+  for (const hookName of ["createTile", "updateTile", "deleteTile"]) {
     Hooks.on(hookName, () => {
-      if (game.talkToMe?.app?.element) game.talkToMe.app.refreshTokenSelectors();
+      if (game.talkToMe?.app?.element) game.talkToMe.app.refreshManagedTileList?.();
+      game.talkToMe?.resetEntryHistory?.();
     });
   }
 
   Hooks.on("updateToken", async (tokenDoc, changes) => {
-    if (game.talkToMe?.app?.element) game.talkToMe.app.refreshTokenSelectors();
-
+    if (game.talkToMe?.app?.element) game.talkToMe.app.refreshTokenSelectors?.();
     const moved = Object.hasOwn(changes ?? {}, "x") || Object.hasOwn(changes ?? {}, "y");
-    if (moved) await game.talkToMe?.checkEntryTriggersForToken(tokenDoc);
-
+    if (moved) await game.talkToMe?.scanMovementTriggers?.();
     game.talkToMe?.bubbles?.updatePositions?.();
   });
 }
 
-function ttmPanClientToWorld(data) {
+function panClientToWorld(data) {
   if (!data?.world) return;
-
   const currentScale = canvas.stage?.scale?.x ?? 1;
   const targetScale = Math.max(currentScale, 1.35);
-
   try {
-    canvas.animatePan({
-      x: data.world.x,
-      y: data.world.y,
-      scale: targetScale,
-      duration: data.duration ?? 450
-    });
+    canvas.animatePan({ x: data.world.x, y: data.world.y, scale: targetScale, duration: data.duration ?? 450 });
   } catch (err) {
-    canvas.animatePan({
-      x: data.world.x,
-      y: data.world.y,
-      duration: data.duration ?? 450
-    });
+    canvas.animatePan({ x: data.world.x, y: data.world.y, duration: data.duration ?? 450 });
   }
 }
 
@@ -104,8 +107,7 @@ export function registerSocket() {
     if (data.sceneId && data.sceneId !== canvas.scene?.id) return;
 
     if (data.action === TTM_SOCKET_ACTIONS.SPEECH) {
-      console.debug("TalkToMe received speech socket", data);
-      if (data.zoomToSpeaker) ttmPanClientToWorld(data);
+      if (data.zoomToSpeaker) panClientToWorld(data);
       game.talkToMe?.bubbles?.show?.({
         sceneId: data.sceneId,
         tokenId: data.tokenId,
@@ -117,12 +119,7 @@ export function registerSocket() {
       });
     }
 
-    if (data.action === TTM_SOCKET_ACTIONS.PAN) {
-      ttmPanClientToWorld(data);
-    }
-
-    if (data.action === TTM_SOCKET_ACTIONS.CLEAR) {
-      game.talkToMe?.bubbles?.clear?.();
-    }
+    if (data.action === TTM_SOCKET_ACTIONS.PAN) panClientToWorld(data);
+    if (data.action === TTM_SOCKET_ACTIONS.CLEAR) game.talkToMe?.bubbles?.clear?.();
   });
 }
