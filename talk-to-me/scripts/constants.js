@@ -17,5 +17,6 @@ export const TTM_TAGGER_ID = "tagger";
 // The socket receives a payload and checks its action before doing anything.
 export const TTM_SOCKET_ACTIONS = {
   SPEECH: "speech",
-  CLEAR: "clear"
+  CLEAR: "clear",
+  PAN: "pan"
 };

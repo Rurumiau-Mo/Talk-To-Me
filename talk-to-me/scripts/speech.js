@@ -118,6 +118,22 @@ export async function panZoomToToken(tokenLike) {
 
 // Legacy fallback using Foundry's normal speech bubble system.
 // This is local-only, but useful if custom bubbles are disabled.
+// Send a pan/zoom request to connected clients.
+// Each receiving client runs canvas.animatePan() locally.
+export async function broadcastPanToSpeaker(tokenLike, duration = 450) {
+  const tok = resolveToken(tokenLike);
+  if (!tok) return;
+
+  game.socket.emit(`module.${TTM_ID}`, {
+    action: TTM_SOCKET_ACTIONS.PAN,
+    senderId: game.user.id,
+    sceneId: canvas.scene?.id,
+    tokenId: tok.document.id,
+    world: getTokenWorldBubblePosition(tok),
+    duration
+  });
+}
+
 export async function sayFoundryBubble(tokenLike, text, bubbleOptions = {}) {
   const tok = resolveToken(tokenLike);
   if (!tok) return;
@@ -142,7 +158,7 @@ export async function sayCustomBubble(tokenLike, text, speakerName = "", duratio
 }
 
 // Send speech bubble data to all connected clients.
-export async function broadcastSpeech(tokenLike, text, speakerName = "", duration = null, bubbleId = "") {
+export async function broadcastSpeech(tokenLike, text, speakerName = "", duration = null, bubbleId = "", zoomToSpeaker = false) {
   const tok = resolveToken(tokenLike);
   if (!tok) return;
 
@@ -155,7 +171,8 @@ export async function broadcastSpeech(tokenLike, text, speakerName = "", duratio
     speakerName: speakerName || tok.name,
     duration,
     bubbleId: bubbleId || `${canvas.scene?.id}.${tok.document.id}.${Date.now()}`,
-    world: getTokenWorldBubblePosition(tok)
+    world: getTokenWorldBubblePosition(tok),
+    zoomToSpeaker
   });
 }
 

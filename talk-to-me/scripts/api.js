@@ -134,7 +134,7 @@ export class TalkToMe {
       if (useCustom) {
         const bubbleId = `${canvas.scene?.id}.${resolvedToken.document.id}.${Date.now()}`;
         await sayCustomBubble(resolvedToken, finalText, npcName, null, bubbleId);
-        if (broadcast) await broadcastSpeech(resolvedToken, finalText, npcName, null, bubbleId);
+        if (broadcast) await broadcastSpeech(resolvedToken, finalText, npcName, null, bubbleId, shouldZoom);
       } else {
         await sayFoundryBubble(resolvedToken, finalText, bubbleOptions);
       }

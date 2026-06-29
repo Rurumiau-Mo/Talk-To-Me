@@ -76,6 +76,28 @@ export function registerHooks() {
   });
 }
 
+function ttmPanClientToWorld(data) {
+  if (!data?.world) return;
+
+  const currentScale = canvas.stage?.scale?.x ?? 1;
+  const targetScale = Math.max(currentScale, 1.35);
+
+  try {
+    canvas.animatePan({
+      x: data.world.x,
+      y: data.world.y,
+      scale: targetScale,
+      duration: data.duration ?? 450
+    });
+  } catch (err) {
+    canvas.animatePan({
+      x: data.world.x,
+      y: data.world.y,
+      duration: data.duration ?? 450
+    });
+  }
+}
+
 export function registerSocket() {
   game.socket.on(`module.${TTM_ID}`, async data => {
     if (!data?.action) return;
@@ -83,6 +105,7 @@ export function registerSocket() {
 
     if (data.action === TTM_SOCKET_ACTIONS.SPEECH) {
       console.debug("TalkToMe received speech socket", data);
+      if (data.zoomToSpeaker) ttmPanClientToWorld(data);
       game.talkToMe?.bubbles?.show?.({
         sceneId: data.sceneId,
         tokenId: data.tokenId,
@@ -92,6 +115,10 @@ export function registerSocket() {
         bubbleId: data.bubbleId,
         world: data.world
       });
+    }
+
+    if (data.action === TTM_SOCKET_ACTIONS.PAN) {
+      ttmPanClientToWorld(data);
     }
 
     if (data.action === TTM_SOCKET_ACTIONS.CLEAR) {
