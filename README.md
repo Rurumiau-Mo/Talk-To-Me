@@ -7,16 +7,27 @@ Designed to work alongside Monk's Active Tile Triggers, Talk To Me makes it easy
 
 Features
 💬 Display speech bubbles above NPCs
+
 🎲 Pull dialogue directly from RollTables
+
 🗺️ Create trigger tiles that automatically play NPC dialogue
+
 🎭 Select any token on the current scene as the speaker
+
 🔍 Optional camera pan/zoom to the speaking NPC
+
 💻 Generate macros for quick access
+
 🎨 Native Foundry VTT v14 interface
 
 ### Requirements
 Foundry Virtual Tabletop Version 14
+
 Monk's Active Tile Triggers
+
+## Module Page
+
+https://foundryvtt.com/packages/talk-to-me
 
 ### Installation
 
@@ -36,9 +47,20 @@ Use the Trigger Tiles tab to place tiles that automatically trigger NPC dialogue
 
 #### Planned features include:
 
-Better trigger tile management
-Dialogue conditions
+Better trigger tiles management
+
+Magic Traps
+
+Magic Triggers
+
+Emotes
+
+Portraits (Togglable)
+
+Emotion Options
+
 Conversation chains
+
 Compatibility
 
 
