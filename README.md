@@ -6,6 +6,7 @@ Talk To Me is a utility module for Foundry Virtual Tabletop v14 that allows Game
 Designed to work alongside Monk's Active Tile Triggers, Talk To Me makes it easy to create NPC interactions without writing JavaScript.
 
 Features
+
 💬 Display speech bubbles above NPCs
 
 🎲 Pull dialogue directly from RollTables
@@ -73,4 +74,4 @@ Created by Rururmiau-mo (Rurumiau)
 AI-assisted development using ChatGPT (OpenAI). All code has been reviewed, tested, modified, and is maintained by the author.
 
 # Personal Note
-This was made in spare time, with a lot of testing and re-doing and updating to get to this point, If you love the module and it works for you please let me know! or buy me a Ko-fi to say thanks :D - [ko-fi.com/rurumiau](https://ko-fi.com/rurumiau)
+This was made in spare time a little personal project that I've made public, please be nice :) If you love the module and it works for you please let me know! or buy me a Ko-fi to say thanks :D - [ko-fi.com/rurumiau](https://ko-fi.com/rurumiau)
