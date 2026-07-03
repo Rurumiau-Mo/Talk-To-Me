@@ -26,6 +26,8 @@ Foundry Virtual Tabletop Version 14
 
 Monk's Active Tile Triggers
 
+Tagger
+
 ## Module Page
 
 https://foundryvtt.com/packages/talk-to-me
