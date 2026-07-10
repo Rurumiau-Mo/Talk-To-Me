@@ -286,9 +286,8 @@ debugLightMattFlags() {
 }
 
   async triggerSpeechTile(tileId, tokenLike = null, overrides = {}) {
-    const doc = canvas.scene?.tiles?.get(tileId);
-    if (doc) await activateUtilityTemplate(doc, tokenLike, overrides);
-
+    // `triggerSpeechTile` in tiles.js owns the complete activation route.
+    // Do not pre-activate here or utility actions run twice.
     return triggerSpeechTile(this, tileId, tokenLike, overrides);
   }
 
@@ -388,12 +387,22 @@ async scanMovementTriggers({ primeOnly = false } = {}) {
   if (!canvas?.scene || !canvas.tokens) return;
 
   const tokens = canvas.tokens.placeables ?? [];
-  const tiles = this.getManagedSpeechTiles()
-    .filter(tile => TTM_MOVEMENT_TRIGGERS.includes(tile.getFlag(TTM_ID, "speech")?.trigger));
+
+  // Scan every TalkToMe tile with an enter/exit trigger.
+  // Utility tiles such as switches and lights are not always managed speech tiles.
+  const tiles = (canvas.scene.tiles?.contents ?? []).filter(tileDoc => {
+    const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
+    const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
+    const trigger = speech.trigger ?? utility.trigger;
+
+    return Boolean(utility.template || speech.managed)
+      && TTM_MOVEMENT_TRIGGERS.includes(trigger);
+  });
 
   for (const tileDoc of tiles) {
-    const flags = tileDoc.getFlag(TTM_ID, "speech");
-    if (!flags?.managed) continue;
+    const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
+    const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
+    const trigger = speech.trigger ?? utility.trigger;
 
     for (const token of tokens) {
       if (!token?.document) continue;
@@ -412,10 +421,9 @@ async scanMovementTriggers({ primeOnly = false } = {}) {
         continue;
       }
 
-      let shouldTrigger = false;
-
-      if (flags.trigger === "enter") shouldTrigger = !wasInside && insideNow;
-      if (flags.trigger === "exit") shouldTrigger = wasInside && !insideNow;
+      const shouldTrigger =
+        (trigger === "enter" && !wasInside && insideNow)
+        || (trigger === "exit" && wasInside && !insideNow);
 
       this.entryState.set(stateKey, insideNow);
 
@@ -423,12 +431,21 @@ async scanMovementTriggers({ primeOnly = false } = {}) {
 
       const now = Date.now();
       const last = this.entryCooldown.get(stateKey) ?? 0;
-      const cooldown = Number(game.settings.get(TTM_ID, "triggerCooldown") ?? 1000);
+      const cooldown = Number(
+        game.settings.get(TTM_ID, "triggerCooldown") ?? 1000
+      );
 
       if (now - last < cooldown) continue;
 
       this.entryCooldown.set(stateKey, now);
-      await this.triggerSpeechTile(tileDoc.id, token);
+
+      if (utility.template && utility.template !== "speech") {
+        const result = await applyUtilityTemplateActions(this, tileDoc, token);
+      } else {
+        await this.triggerSpeechTile(tileDoc.id, token, {
+          movementTrigger: trigger
+        });
+      }
     }
   }
 }

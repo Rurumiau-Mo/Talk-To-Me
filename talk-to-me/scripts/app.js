@@ -475,7 +475,12 @@ createTilePickerField(labelText, input) {
     }
 
     input.value = tile.document.id;
-    ui.notifications.info(`TalkToMe selected tile: ${tile.document.id}`);
+    input.dataset.selectedTileName = tile.document.name ?? tile.document.id;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+
+    ui.notifications.info(
+      `TalkToMe linked tile selected: ${tile.document.name ?? "Unnamed Tile"} (${tile.document.id})`
+    );
   });
 
   const goTiles = ttmMake("button", "🧩", "ttm-icon-button");
@@ -1001,6 +1006,21 @@ pickTilePlacementPoint() {
     const create = ttmMake("button", "Place Template Tile", "ttm-primary");
     create.type = "button";
     create.addEventListener("click", async () => {
+      if (template.value === "switch" && targetTileId.value.trim()) {
+        const linkedTile = canvas.scene?.tiles?.get(targetTileId.value.trim());
+
+        if (!linkedTile) {
+          ui.notifications.warn(
+            "The selected Linked Tile ID is not present on the current scene."
+          );
+          return;
+        }
+
+        ui.notifications.info(
+          `TalkToMe switch linked to: ${linkedTile.name ?? "Unnamed Tile"} (${linkedTile.id})`
+        );
+      }
+
       const placement = await this.pickTilePlacementPoint();
       if (!placement) return;
 

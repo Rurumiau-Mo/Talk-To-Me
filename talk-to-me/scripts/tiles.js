@@ -419,6 +419,10 @@ export async function createSpeechTile({
   const fallbackScript = generateTileTriggerScript({ postChat, zoomToSpeaker });
   const textureSrc = inactiveImage || tileImage || game.settings.get(TTM_ID, "speechTileImage") || "icons/svg/sound.svg";
 
+  const originalDoorState = doorWallId
+    ? Number(canvas.scene?.walls?.get(doorWallId)?.ds ?? 0)
+    : null;
+
   const flags = {
     [TTM_ID]: {
       utility: placementManager.addPlacementFlags({
@@ -463,7 +467,9 @@ export async function createSpeechTile({
           image: inactiveImage || textureSrc,
           inactiveImage: inactiveImage || textureSrc,
           activeImage,
+          doorWallId,
           doorAction,
+          originalDoorState,
           lightDim,
           lightBright,
           lightColor,
@@ -569,10 +575,13 @@ export async function triggerSpeechTile(api, tileId, tokenLike = null, overrides
   if (!doc) return ttmNotice("warn", "Speech tile not found.");
 
   const utility = doc.getFlag(TTM_ID, "utility") ?? {};
-  if (utility.template === "teleport") {
-    await moveTokenToTeleportDestination(doc, tokenLike, { debug: true });
-  } else {
-    await applyUtilityTemplateActions(api, doc, tokenLike);
+
+  if (overrides.skipUtilityAction !== true) {
+    if (utility.template === "teleport") {
+      await moveTokenToTeleportDestination(doc, tokenLike, { debug: true });
+    } else {
+      await applyUtilityTemplateActions(api, doc, tokenLike);
+    }
   }
 
   const flags = doc.getFlag(TTM_ID, "speech");

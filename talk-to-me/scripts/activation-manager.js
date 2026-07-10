@@ -1,5 +1,6 @@
 import { TTM_ID, TTM_SOCKET_ACTIONS } from "./constants.js";
 import { placementManager } from "./placement-manager.js";
+import { lightManager } from "./light-manager.js";
 
 class ActivationManager {
   constructor(api) {
@@ -93,7 +94,14 @@ class ActivationManager {
     const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
     const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
     const trigger = speech.trigger ?? utility.trigger ?? "manual";
-    return speech.managed === true && trigger === "switch";
+    const template = utility.template ?? "speech";
+    const isTalkToMeTile = speech.managed === true || Boolean(utility.template);
+
+    // Reset tiles are explicit click controls and must not depend on
+    // legacy speech trigger flags saved on older tile documents.
+    if (template === "reset") return true;
+
+    return isTalkToMeTile && trigger === "switch";
   }
 
   matches(clickType, activation = "left") {
@@ -371,6 +379,27 @@ refreshTileVisibility() {
 
   async execute(tileDoc, token = null) {
     const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
+    const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
+
+    // Light clicks use the dedicated LightManager route.
+    // This avoids the generic speech/macro pipeline interfering with toggling.
+    if (utility.template === "light") {
+      const result = await lightManager.toggle(tileDoc);
+
+      console.log("TalkToMe Light click activation", {
+        tileId: tileDoc.id,
+        tileName: tileDoc.name,
+        active: result
+      });
+
+      return result;
+    }
+
+    if (utility.template === "reset") {
+      const { activateResetTile } = await import("./utilities.js");
+      return activateResetTile(tileDoc);
+    }
+
     return this.api.triggerSpeechTile(tileDoc.id, token, {
       postChat: speech.postChat,
       zoomToSpeaker: speech.zoomToSpeaker

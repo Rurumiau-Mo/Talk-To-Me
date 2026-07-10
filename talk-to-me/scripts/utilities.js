@@ -235,33 +235,9 @@ export async function teleportToken(tileDoc, tokenLike = null) {
 
 
 export async function resetAllUtilityTiles() {
-  const tiles = canvas.scene?.tiles ?? [];
-
-  for (const tileDoc of tiles) {
-    const utility = getUtilityFlags(tileDoc);
-    if (!utility?.template) continue;
-
-    const updates = {
-      active: false,
-      ambientLightId: ""
-    };
-
-    if (utility.inactiveImage) {
-      await updateTileImage(tileDoc, utility.inactiveImage);
-    }
-
-    if (utility.ambientLightId) {
-      const light = canvas.scene?.lights?.get(utility.ambientLightId);
-      if (light) if (!light) return await clearMissingLightState(tileDoc, flags);
-    await light.delete();
-    }
-
-    await setUtilityFlags(tileDoc, updates);
-  }
-
-  ttmNotice("info", "TalkToMe reset all utility tiles in this scene.");
-  return true;
+  return resetAllTalkToMeTiles();
 }
+
 
 export async function activateUtilityTemplate(tileDoc, tokenLike = null, overrides = {}) {
   const utility = getUtilityFlags(tileDoc);
@@ -274,7 +250,7 @@ export async function activateUtilityTemplate(tileDoc, tokenLike = null, overrid
   if (utility.template === TTM_TEMPLATES.LIGHT) return toggleLightTile(tileDoc);
   if (utility.template === TTM_TEMPLATES.TRAP) return activateTrapTile(tileDoc, tokenLike);
   if (utility.template === TTM_TEMPLATES.TELEPORT) return teleportToken(tileDoc, tokenLike);
-  if (utility.template === TTM_TEMPLATES.RESET) return resetAllUtilityTiles();
+  if (utility.template === TTM_TEMPLATES.RESET) return activateResetTile(tileDoc);
 
   if (flags.template === TTM_TEMPLATES.TELEPORT) {
     await runTeleportUtility(tileDoc, tokenLike, { debug: true });
@@ -285,11 +261,144 @@ export async function activateUtilityTemplate(tileDoc, tokenLike = null, overrid
 }
 
 
+
+
+async function runTalkToMeActionCommand(command, {
+  tileDoc,
+  tokenLike = null,
+  sourceTileDoc = null
+} = {}) {
+  const script = String(command ?? "").trim();
+  if (!script) return false;
+
+  const token = tokenLike?.document
+    ? tokenLike
+    : tokenLike?.object?.document
+      ? tokenLike.object
+      : tokenLike ?? null;
+
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const execute = new AsyncFunction(
+    "tile",
+    "tileDoc",
+    "token",
+    "tokens",
+    "sourceTile",
+    "game",
+    "canvas",
+    "ui",
+    script
+  );
+
+  await execute(
+    tileDoc,
+    tileDoc,
+    token,
+    token ? [token] : [],
+    sourceTileDoc,
+    game,
+    canvas,
+    ui
+  );
+
+  return true;
+}
+
+async function runTalkToMeMacroReference(reference, context = {}) {
+  const value = String(reference ?? "").trim();
+  if (!value) return false;
+
+  let macro = null;
+
+  try {
+    if (value.startsWith("Macro.")) {
+      macro = await fromUuid(value);
+    } else {
+      macro = game.macros?.get(value)
+        ?? game.macros?.find(item => item.name === value)
+        ?? null;
+    }
+  } catch (error) {
+    console.warn("TalkToMe could not resolve linked macro.", error);
+  }
+
+  if (!macro?.execute) return false;
+
+  await macro.execute({
+    tile: context.tileDoc,
+    tileDoc: context.tileDoc,
+    token: context.tokenLike,
+    sourceTile: context.sourceTileDoc
+  });
+
+  return true;
+}
+
+export async function executeConfiguredTileProgram(
+  tileDoc,
+  tokenLike = null,
+  sourceTileDoc = null
+) {
+  if (!tileDoc) return false;
+
+  const matt = tileDoc.getFlag("monks-active-tiles") ?? {};
+  const actions = Array.isArray(matt.actions) ? matt.actions : [];
+  let executed = false;
+
+  for (const action of actions) {
+    const type = String(action?.action ?? "").toLowerCase();
+    const data = action?.data ?? {};
+
+    if (type === "script") {
+      const command = data.command ?? data.script ?? action.command ?? action.script;
+      executed = await runTalkToMeActionCommand(command, {
+        tileDoc,
+        tokenLike,
+        sourceTileDoc
+      }) || executed;
+      continue;
+    }
+
+    if (type === "runmacro" || type === "macro") {
+      const reference =
+        data.entity
+        ?? data.macro
+        ?? action.entity
+        ?? action.macro;
+
+      const ranMacro = await runTalkToMeMacroReference(reference, {
+        tileDoc,
+        tokenLike,
+        sourceTileDoc
+      });
+
+      if (ranMacro) {
+        executed = true;
+        continue;
+      }
+
+      const command =
+        data.command
+        ?? data.script
+        ?? action.command
+        ?? action.script;
+
+      executed = await runTalkToMeActionCommand(command, {
+        tileDoc,
+        tokenLike,
+        sourceTileDoc
+      }) || executed;
+    }
+  }
+
+  return executed;
+}
+
 export async function triggerLinkedTalkToMeTile(api, tileDoc, tokenLike = null) {
   const flags = getUtilityFlags(tileDoc);
   const linkedId = flags.linkedTriggerTileId || flags.targetTileId;
 
-  if (!linkedId || !api?.triggerSpeechTile) return false;
+  if (!linkedId) return false;
 
   if (linkedId === tileDoc.id) {
     ui.notifications.warn("TalkToMe prevented a tile from triggering itself.");
@@ -302,17 +411,51 @@ export async function triggerLinkedTalkToMeTile(api, tileDoc, tokenLike = null) 
     return false;
   }
 
-  // Run the linked tile through its normal TalkToMe activation route.
-  // This executes its configured template action and its programmed
-  // speech/macro behaviour exactly as though the tile itself activated.
-  await api.triggerSpeechTile(linkedTile.id, tokenLike, {
-    postChat: true,
-    zoomToSpeaker: false,
-    linkedActivation: true,
-    sourceTileId: tileDoc.id
-  });
+  const sourceName = tileDoc.name ?? tileDoc.id;
+  const linkedName = linkedTile.name ?? linkedTile.id;
+  const linkedUtility = getUtilityFlags(linkedTile);
+  const linkedSpeech = linkedTile.getFlag(TTM_ID, "speech") ?? {};
 
-  return true;
+  let utilityExecuted = false;
+  let speechExecuted = false;
+
+  // Utility tiles must run directly. Routing them through the speech wrapper
+  // can return early when the linked tile has no speech source.
+  if (linkedUtility?.template && linkedUtility.template !== TTM_TEMPLATES.SPEECH) {
+    utilityExecuted = await applyUtilityTemplateActions(
+      api,
+      linkedTile,
+      tokenLike
+    ) !== false;
+  }
+
+  // Speech-only linked tiles still use the normal speech route.
+  if (
+    linkedUtility?.template === TTM_TEMPLATES.SPEECH
+    || linkedSpeech?.managed === true
+  ) {
+    const speechResult = await api?.triggerSpeechTile?.(
+      linkedTile.id,
+      tokenLike,
+      {
+        postChat: true,
+        zoomToSpeaker: false,
+        linkedActivation: true,
+        sourceTileId: tileDoc.id,
+        skipUtilityAction: utilityExecuted
+      }
+    );
+
+    speechExecuted = speechResult !== false;
+  }
+
+  const macroExecuted = await executeConfiguredTileProgram(
+    linkedTile,
+    tokenLike,
+    tileDoc
+  );
+
+  return utilityExecuted || speechExecuted || macroExecuted;
 }
 
 
@@ -605,25 +748,70 @@ function findSafeTeleportLanding(tileDoc, x, y, width, height) {
 
 
 async function resetTalkToMeTileToOriginalState(tileDoc) {
-  const flags = getUtilityFlags(tileDoc);
-  const original = flags.originalState ?? {};
+  if (!tileDoc || !canvas?.scene) return false;
 
-  const inactiveImage = original.inactiveImage ?? flags.inactiveImage ?? flags.defaultImage;
+  const currentTile = canvas.scene.tiles?.get(tileDoc.id) ?? tileDoc;
+  const flags = getUtilityFlags(currentTile);
+  const original = flags.originalState ?? {};
+  const template = flags.template;
+
+  // Lights require manager cleanup so duplicate/legacy AmbientLights are removed.
+  if (template === TTM_TEMPLATES.LIGHT) {
+    await lightManager.setActive(currentTile, false);
+  } else {
+    const managedLightIds = (canvas.scene.lights?.contents ?? [])
+      .filter(lightDoc => {
+        const owner =
+          lightDoc.getFlag(TTM_ID, "ownerTileId")
+          ?? lightDoc.getFlag(TTM_ID, "parentTileId")
+          ?? lightDoc.getFlag(TTM_ID, "linkedTileId");
+
+        return owner === currentTile.id;
+      })
+      .map(lightDoc => lightDoc.id);
+
+    if (managedLightIds.length) {
+      await canvas.scene.deleteEmbeddedDocuments(
+        "AmbientLight",
+        managedLightIds
+      );
+    }
+  }
+
+  // Restore the linked door to the state captured when the switch was created.
+  if (template === TTM_TEMPLATES.SWITCH && flags.doorWallId) {
+    const wall = canvas.scene.walls?.get(flags.doorWallId);
+
+    if (wall) {
+      let originalDoorState = Number(original.originalDoorState);
+
+      // Older tiles predate saved door state. Their safe reset state is closed.
+      if (!Number.isFinite(originalDoorState)) {
+        originalDoorState = 0;
+      }
+
+      await wall.update({ ds: originalDoorState });
+    }
+  }
+
+  const inactiveImage =
+    original.inactiveImage
+    ?? original.image
+    ?? flags.inactiveImage
+    ?? flags.defaultImage;
+
   const updates = {
-    [`flags.${TTM_ID}.utility.active`]: original.active ?? false,
-    [`flags.${TTM_ID}.utility.lightOn`]: false
+    [`flags.${TTM_ID}.utility.active`]: Boolean(original.active ?? false),
+    [`flags.${TTM_ID}.utility.lightOn`]: false,
+    [`flags.${TTM_ID}.utility.ambientLightId`]: ""
   };
 
-  if (inactiveImage) updates.texture = { src: inactiveImage };
-
-  if (flags.ambientLightId) {
-    const light = canvas.scene?.lights?.get(flags.ambientLightId);
-    if (light) await light.delete();
-
-    updates[`flags.${TTM_ID}.utility.ambientLightId`] = "";
+  if (inactiveImage) {
+    updates["texture.src"] = inactiveImage;
   }
 
   for (const key of [
+    "doorWallId",
     "doorAction",
     "lightDim",
     "lightBright",
@@ -645,54 +833,76 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
     }
   }
 
-  await tileDoc.update(updates);
+  await currentTile.update(updates);
   return true;
 }
 
-export async function resetAllTalkToMeTiles(sourceTileDoc = null) {
-  const managedTiles = canvas.scene?.tiles?.filter(tileDoc => {
-    const utility = tileDoc.getFlag(TTM_ID, "utility");
-    if (!utility?.template) return false;
-    if (sourceTileDoc && tileDoc.id === sourceTileDoc.id) return false;
-    return true;
-  }) ?? [];
 
-  for (const tileDoc of managedTiles) {
+export async function resetAllTalkToMeTiles({
+  sourceTileDoc = null,
+  deferSourceReset = false
+} = {}) {
+  const managedTiles = (canvas.scene?.tiles?.contents ?? []).filter(tileDoc => {
+    const utility = tileDoc.getFlag(TTM_ID, "utility");
+    return Boolean(utility?.template);
+  });
+
+  const sourceId = sourceTileDoc?.id ?? null;
+  const immediateTiles = deferSourceReset && sourceId
+    ? managedTiles.filter(tileDoc => tileDoc.id !== sourceId)
+    : managedTiles;
+
+  for (const tileDoc of immediateTiles) {
     await resetTalkToMeTileToOriginalState(tileDoc);
   }
 
   game.talkToMeTeleportCooldowns?.clear?.();
+  game.talkToMe?.entryCooldown?.clear?.();
+  game.talkToMe?.resetEntryHistory?.();
   game.talkToMe?.refreshClickableTileOverlay?.();
 
-  ui.notifications.info(`TalkToMe reset ${managedTiles.length} tile${managedTiles.length === 1 ? "" : "s"}.`);
-
-  return true;
+  return {
+    count: managedTiles.length,
+    deferredSource: deferSourceReset && sourceId
+      ? managedTiles.find(tileDoc => tileDoc.id === sourceId) ?? null
+      : null
+  };
 }
 
 export async function activateResetTile(tileDoc) {
-  const flags = getUtilityFlags(tileDoc);
-  const updates = {
+  if (!tileDoc) return false;
+
+  const currentTile = canvas.scene?.tiles?.get(tileDoc.id) ?? tileDoc;
+  const flags = getUtilityFlags(currentTile);
+
+  const activeUpdates = {
     [`flags.${TTM_ID}.utility.active`]: true
   };
 
-  if (flags.activeImage) updates.texture = { src: flags.activeImage };
+  if (flags.activeImage) {
+    activeUpdates["texture.src"] = flags.activeImage;
+  }
 
-  await tileDoc.update(updates);
-  await resetAllTalkToMeTiles(tileDoc);
+  await currentTile.update(activeUpdates);
 
-  const inactiveImage = flags.inactiveImage ?? flags.defaultImage;
-  const resetUpdates = {
-    [`flags.${TTM_ID}.utility.active`]: false
-  };
+  // Give Foundry a render frame so the reset tile visibly fires.
+  await new Promise(resolve => requestAnimationFrame(resolve));
 
-  if (inactiveImage) resetUpdates.texture = { src: inactiveImage };
+  const resetResult = await resetAllTalkToMeTiles({
+    sourceTileDoc: currentTile,
+    deferSourceReset: true
+  });
 
-  window.setTimeout(() => {
-    const current = canvas.scene?.tiles?.get(tileDoc.id);
-    if (current) current.update(resetUpdates);
-  }, 500);
+  // Keep the active image visible briefly, then reset the source tile too.
+  await new Promise(resolve => window.setTimeout(resolve, 400));
 
-  return true;
+  const refreshedSource = canvas.scene?.tiles?.get(currentTile.id);
+  if (refreshedSource) {
+    await resetTalkToMeTileToOriginalState(refreshedSource);
+  }
+
+  return resetResult.count > 0;
 }
+
 
 
