@@ -1,15 +1,15 @@
 {
   "id": "talk-to-me",
   "title": "TalkToMe",
-  "description": "A Foundry VTT v14 GM utility for synchronized NPC speech bubbles, RollTable dialogue, and trigger tiles.",
-  "version": "0.3.4",
+  "description": "A Foundry VTT v14 GM utility for MATT-friendly utility tile templates, synchronized NPC bubbles, RollTable speech, switches, lights, traps, teleports, and reset tiles.",
+  "version": "0.7.9",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
   },
   "authors": [
     {
-      "name": "Rurumiau"
+      "name": "Ayesha Houghton Thompson"
     }
   ],
   "esmodules": [
@@ -33,5 +33,8 @@
       }
     ]
   },
-  "socket": true
+  "socket": true,
+  "scripts": [
+    "scripts/launcher.js"
+  ]
 }

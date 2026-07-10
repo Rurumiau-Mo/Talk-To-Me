@@ -18,5 +18,6 @@ export const TTM_TAGGER_ID = "tagger";
 export const TTM_SOCKET_ACTIONS = {
   SPEECH: "speech",
   CLEAR: "clear",
-  PAN: "pan"
+  PAN: "pan",
+  REQUEST_TILE_TRIGGER: "requestTileTrigger"
 };
