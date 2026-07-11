@@ -476,7 +476,7 @@ toggleSwitchClickActivation() {
     ttmAdd(panel, this.createHint("Pick a token from the scene, or leave it on auto and select/target a token on the canvas."));
     ttmAdd(panel, tokenName);
     ttmAdd(panel, this.createField("Token", tokenSelect));
-    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "trap", "teleport", "reset"]));
+    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "globalLight", "trap", "teleport", "reset"]));
     ttmAdd(panel, this.createField("Custom speech", textArea));
     ttmAdd(panel, this.createField("Custom NPC name", npcName));
     ttmAdd(panel, postChat.label);
@@ -1046,7 +1046,8 @@ pickTilePlacementPoint() {
     for (const [value, label] of [
       ["speech", "Speech Bubble"],
       ["switch", "Switch Activation"],
-      ["light", "Light Activation"],
+      ["light", "Environment: Ambient Light"],
+      ["globalLight", "Environment: Global Lighting"],
       ["trap", "Trap Activation"],
       ["teleport", "Teleport Activation"],
       ["reset", "Create Reset Tile"]
@@ -1208,6 +1209,16 @@ pickTilePlacementPoint() {
     lightActiveImage.type = "text";
     lightActiveImage.placeholder = "Light on image path";
 
+    const globalLightInactiveImage = ttmMake("input");
+    globalLightInactiveImage.type = "text";
+    globalLightInactiveImage.placeholder =
+      "Global lighting idle/default image path";
+
+    const globalLightActiveImage = ttmMake("input");
+    globalLightActiveImage.type = "text";
+    globalLightActiveImage.placeholder =
+      "Global lighting active image path";
+
     const trapInactiveImage = ttmMake("input");
     trapInactiveImage.type = "text";
     trapInactiveImage.placeholder = "Trap ready/default image path";
@@ -1263,6 +1274,36 @@ pickTilePlacementPoint() {
     lightAlpha.type = "number";
     lightAlpha.step = "0.1";
     lightAlpha.value = 0.5;
+
+    const globalLightAction = ttmMake("select");
+    for (const [value, label] of [
+      ["on", "Fade to Day"],
+      ["off", "Fade to Night"],
+      ["toggle", "Toggle Day / Night"],
+      ["set-darkness", "Set Darkness Level"],
+      ["restore", "Restore Original Lighting"]
+    ]) {
+      const option = ttmMake("option", label);
+      option.value = value;
+      ttmAdd(globalLightAction, option);
+    }
+
+    const globalDarkness = ttmMake("input");
+    globalDarkness.type = "number";
+    globalDarkness.min = 0;
+    globalDarkness.max = 1;
+    globalDarkness.step = 0.05;
+    globalDarkness.value = 0.75;
+
+    const globalLightColorOverride = this.createCheckbox(
+      "ttm-global-light-colour-override",
+      "Override global light colour",
+      false
+    );
+
+    const globalLightColor = ttmMake("input");
+    globalLightColor.type = "text";
+    globalLightColor.value = "#ffffff";
 
     const saveAbility = ttmMake("select");
     for (const value of ["str", "dex", "con", "int", "wis", "cha"]) {
@@ -1386,7 +1427,7 @@ pickTilePlacementPoint() {
       return group;
     };
 
-    const basicGroup = makeGroup("Basic Tile Setup", ["speech", "switch", "light", "trap", "teleport", "reset"]);
+    const basicGroup = makeGroup("Basic Tile Setup", ["speech", "switch", "light", "globalLight", "trap", "teleport", "reset"]);
     ttmAdd(basicGroup, this.createField("Template", template));
     ttmAdd(basicGroup, this.createField("Tile name", name));
     ttmAdd(basicGroup, this.createField("Trigger", trigger));
@@ -1402,12 +1443,12 @@ pickTilePlacementPoint() {
       this.createField("Pause after activation (seconds)", activationCooldownSeconds)
     );
 
-    const universalTriggerGroup = makeGroup("Switch Activated Trigger Options", ["speech", "switch", "light", "trap", "teleport", "reset"]);
+    const universalTriggerGroup = makeGroup("Switch Activated Trigger Options", ["speech", "switch", "light", "globalLight", "trap", "teleport", "reset"]);
     universalTriggerGroup.dataset.triggerOnly = "switch";
     ttmAdd(universalTriggerGroup, this.createHint("These options appear whenever Trigger is set to Switch activated, regardless of template."));
     ttmAdd(universalTriggerGroup, this.createField("Click activation", clickActivation));
 
-    const hotspotOptionsGroup = makeGroup("Clickable Hotspot Options", ["speech", "switch", "light", "trap", "teleport", "reset"]);
+    const hotspotOptionsGroup = makeGroup("Clickable Hotspot Options", ["speech", "switch", "light", "globalLight", "trap", "teleport", "reset"]);
     hotspotOptionsGroup.dataset.triggerOnly = "switch";
     hotspotOptionsGroup.dataset.requiresVisibleTile = "true";
     ttmAdd(hotspotOptionsGroup, this.createHint("Hotspot options only matter when the tile is visible and activated by click."));
@@ -1534,6 +1575,32 @@ pickTilePlacementPoint() {
     ttmAdd(lightGroup, this.createField("Light alpha", lightAlpha));
     ttmAdd(lightGroup, this.createImagePickerField("Inactive/default image", lightInactiveImage));
     ttmAdd(lightGroup, this.createImagePickerField("Active image", lightActiveImage));
+
+    const globalLightGroup = makeGroup(
+      "Environment: Global Lighting",
+      ["globalLight"]
+    );
+    ttmAdd(globalLightGroup, this.createField("Action", globalLightAction));
+    ttmAdd(globalLightGroup, this.createField("Darkness level (0-1)", globalDarkness));
+    ttmAdd(globalLightGroup, globalLightColorOverride.label);
+    ttmAdd(globalLightGroup, this.createColourPickerField("Global light colour", globalLightColor));
+    ttmAdd(
+      globalLightGroup,
+      this.createImagePickerField(
+        "Inactive/default tile image",
+        globalLightInactiveImage
+      )
+    );
+    ttmAdd(
+      globalLightGroup,
+      this.createImagePickerField(
+        "Active tile image",
+        globalLightActiveImage
+      )
+    );
+    ttmAdd(globalLightGroup, this.createHint(
+      "Global Lighting changes the scene darkness exactly like Foundry's Day and Night buttons. The GM and all players receive the same gradual transition. Global Illumination remains controlled by the scene settings."
+    ));
 
     const trapGroup = makeGroup("Trap Options", ["trap"]);
     ttmAdd(trapGroup, this.createField("Target", trapTarget));
@@ -1695,8 +1762,30 @@ pickTilePlacementPoint() {
         clickActivation: clickActivation.value,
         tileImage: tileImage.value.trim(),
         template: template.value,
-        activeImage: template.value === "light" ? lightActiveImage.value.trim() : template.value === "trap" ? trapActiveImage.value.trim() : template.value === "teleport" ? teleportActiveImage.value.trim() : template.value === "reset" ? resetActiveImage.value.trim() : activeImage.value.trim(),
-        inactiveImage: template.value === "light" ? lightInactiveImage.value.trim() : template.value === "trap" ? trapInactiveImage.value.trim() : template.value === "teleport" ? teleportInactiveImage.value.trim() : template.value === "reset" ? resetInactiveImage.value.trim() : inactiveImage.value.trim(),
+        activeImage:
+          template.value === "light"
+            ? lightActiveImage.value.trim()
+            : template.value === "globalLight"
+              ? globalLightActiveImage.value.trim()
+              : template.value === "trap"
+                ? trapActiveImage.value.trim()
+                : template.value === "teleport"
+                  ? teleportActiveImage.value.trim()
+                  : template.value === "reset"
+                    ? resetActiveImage.value.trim()
+                    : activeImage.value.trim(),
+        inactiveImage:
+          template.value === "light"
+            ? lightInactiveImage.value.trim()
+            : template.value === "globalLight"
+              ? globalLightInactiveImage.value.trim()
+              : template.value === "trap"
+                ? trapInactiveImage.value.trim()
+                : template.value === "teleport"
+                  ? teleportInactiveImage.value.trim()
+                  : template.value === "reset"
+                    ? resetInactiveImage.value.trim()
+                    : inactiveImage.value.trim(),
         doorWallId: doorWallId.value.trim(),
         doorAction: doorAction.value,
         targetTileId: targetTileId.value.trim(),
@@ -1801,6 +1890,7 @@ const updateTemplateVisibility = () => {
     ttmAdd(panel, speechGroup);
     ttmAdd(panel, switchGroup);
     ttmAdd(panel, lightGroup);
+    ttmAdd(panel, globalLightGroup);
     ttmAdd(panel, trapGroup);
     ttmAdd(panel, teleportGroup);
     ttmAdd(panel, resetGroup);
@@ -2273,7 +2363,8 @@ createTileEditorBox() {
   const template = makeSelect([
     ["speech", "Speech Bubble"],
     ["switch", "Switch Activation"],
-    ["light", "Light Activation"],
+    ["light", "Environment: Ambient Light"],
+    ["globalLight", "Environment: Global Lighting"],
     ["trap", "Trap Activation"],
     ["teleport", "Teleport Activation"],
     ["reset", "Reset Tile"]
@@ -2313,6 +2404,22 @@ createTileEditorBox() {
   const lightBright = makeNumber();
   const lightColor = makeInput();
   const lightAlpha = makeNumber("0.1");
+
+  const globalLightAction = makeSelect([
+    ["on", "Fade to Day"],
+    ["off", "Fade to Night"],
+    ["toggle", "Toggle Day / Night"],
+    ["set-darkness", "Set Darkness Level"],
+    ["restore", "Restore Original Lighting"]
+  ]);
+  const globalDarkness = makeNumber("0.05", 0);
+  globalDarkness.max = 1;
+  const globalLightColorOverride = this.createCheckbox(
+    "ttm-edit-global-light-colour-override",
+    "Override global light colour",
+    false
+  );
+  const globalLightColor = makeInput();
 
   const saveAbility = makeSelect(
     ["str", "dex", "con", "int", "wis", "cha"]
@@ -2469,7 +2576,7 @@ createTileEditorBox() {
   };
 
   const commonGroup = makeGroup("Common Settings", [
-    "speech", "switch", "light", "trap", "teleport", "reset"
+    "speech", "switch", "light", "globalLight", "trap", "teleport", "reset"
   ]);
   ttmAdd(commonGroup, this.createField("Tile name", name));
   ttmAdd(commonGroup, this.createField("Template", template));
@@ -2644,6 +2751,21 @@ createTileEditorBox() {
   ttmAdd(lightGroup, this.createField("Colour", lightColor));
   ttmAdd(lightGroup, this.createField("Alpha", lightAlpha));
 
+  const globalLightGroup = makeGroup(
+    "Environment: Global Lighting",
+    ["globalLight"]
+  );
+  ttmAdd(globalLightGroup, this.createField("Action", globalLightAction));
+  ttmAdd(globalLightGroup, this.createField("Darkness level (0-1)", globalDarkness));
+  ttmAdd(globalLightGroup, globalLightColorOverride.label);
+  ttmAdd(globalLightGroup, this.createField("Global light colour", globalLightColor));
+  ttmAdd(
+    globalLightGroup,
+    this.createHint(
+      "This tile always uses Foundry's standard Day/Night darkness animation. Instant changes are not available."
+    )
+  );
+
   const trapGroup = makeGroup("Trap Settings", ["trap"]);
   ttmAdd(trapGroup, this.createField("Save ability", saveAbility));
   ttmAdd(trapGroup, this.createField("Save DC", saveDC));
@@ -2680,6 +2802,7 @@ createTileEditorBox() {
     switchGroup,
     linkedGroup,
     lightGroup,
+    globalLightGroup,
     trapGroup,
     teleportGroup,
     resetGroup
@@ -2807,7 +2930,11 @@ createTileEditorBox() {
     lightBright.value = Number(utility.lightBright ?? 10);
     lightColor.value = utility.lightColor ?? "#ffffff";
     lightAlpha.value = Number(utility.lightAlpha ?? 0.5);
-
+    globalLightAction.value = utility.globalLightAction ?? "toggle";
+    globalDarkness.value = Number(utility.globalDarkness ?? 0.75);
+    globalLightColorOverride.input.checked =
+      utility.globalLightColorOverride === true;
+    globalLightColor.value = utility.globalLightColor ?? "#ffffff";
     saveAbility.value = utility.saveAbility ?? "dex";
     saveDC.value = Number(utility.saveDC ?? 10);
     trapTarget.value = utility.trapTarget ?? "triggering-token";
@@ -3011,6 +3138,21 @@ createTileEditorBox() {
         lightBright: Number(lightBright.value || 10),
         lightColor: lightColor.value.trim() || "#ffffff",
         lightAlpha: Number(lightAlpha.value || 0.5)
+      });
+    }
+
+    if (selectedTemplate === "globalLight") {
+      Object.assign(utilityPatch, {
+        globalLightAction: globalLightAction.value,
+        globalDarkness: Math.max(
+          0,
+          Math.min(1, Number(globalDarkness.value || 0.75))
+        ),
+        globalLightColorOverride:
+          globalLightColorOverride.input.checked,
+        globalLightColor:
+          globalLightColor.value.trim() || "#ffffff",
+        globalLightUseFoundryFade: true
       });
     }
 
@@ -3272,7 +3414,7 @@ createTileEditorBox() {
     ttmAdd(buttons, copy);
 
     ttmAdd(panel, this.createHint("Generate snippets for Foundry hotbar macros or Monk's Active Tile Triggers Execute Script actions."));
-    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "trap", "teleport", "reset"]));
+    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "globalLight", "trap", "teleport", "reset"]));
     ttmAdd(panel, this.createField("Token source", source));
     ttmAdd(panel, this.createField("Custom NPC name", npc));
     ttmAdd(panel, this.createField("Token name or ID", tokenRef));

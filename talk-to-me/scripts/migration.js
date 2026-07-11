@@ -400,6 +400,86 @@ function migrateToVersion5(tileDoc, data) {
   return data;
 }
 
+function migrateToVersion6(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      globalLightAction:
+        utility.globalLightAction ?? "toggle",
+      globalDarkness: Math.max(
+        0,
+        Math.min(
+          1,
+          numberOr(utility.globalDarkness, 0.75)
+        )
+      ),
+      globalLightColorOverride: booleanOr(
+        utility.globalLightColorOverride,
+        false
+      ),
+      globalLightColor:
+        utility.globalLightColor ?? "#ffffff",
+      globalLightFadeSeconds: Math.max(
+        0,
+        numberOr(utility.globalLightFadeSeconds, 0)
+      )
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      globalLightAction:
+        data.utility.originalState?.globalLightAction
+        ?? data.utility.globalLightAction,
+      globalDarkness:
+        data.utility.originalState?.globalDarkness
+        ?? data.utility.globalDarkness,
+      globalLightColorOverride: booleanOr(
+        data.utility.originalState?.globalLightColorOverride
+          ?? data.utility.globalLightColorOverride,
+        false
+      ),
+      globalLightColor:
+        data.utility.originalState?.globalLightColor
+        ?? data.utility.globalLightColor,
+      globalLightFadeSeconds:
+        data.utility.originalState?.globalLightFadeSeconds
+        ?? data.utility.globalLightFadeSeconds
+    },
+    { inplace: false }
+  );
+
+  data.version = 6;
+  return data;
+}
+
+function migrateToVersion7(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      globalLightUseFoundryFade: true
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      globalLightUseFoundryFade: true
+    },
+    { inplace: false }
+  );
+
+  data.version = 7;
+  return data;
+}
+
 function isTalkToMeTile(tileDoc) {
   const root = tileDoc.flags?.[TTM_ID] ?? {};
   const utility = root.utility ?? {};
@@ -438,6 +518,8 @@ export function buildTileMigration(tileDoc) {
   if (data.version < 3) data = migrateToVersion3(tileDoc, data);
   if (data.version < 4) data = migrateToVersion4(tileDoc, data);
   if (data.version < 5) data = migrateToVersion5(tileDoc, data);
+  if (data.version < 6) data = migrateToVersion6(tileDoc, data);
+  if (data.version < 7) data = migrateToVersion7(tileDoc, data);
 
   return {
     _id: tileDoc.id,

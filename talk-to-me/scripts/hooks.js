@@ -6,6 +6,9 @@
 import { TTM_ID, TTM_SOCKET_ACTIONS } from "./constants.js";
 import { lightManager } from "./light-manager.js";
 import { migrateScene } from "./migration.js";
+import {
+  synchroniseExternalGlobalLightingChange
+} from "./utilities.js";
 
 
 // Visibility refresh state
@@ -233,3 +236,19 @@ export function registerSocket() {
     if (data.action === "hardTeleport") return game.talkToMe?.handleHardTeleportRequest?.(data);
   });
 }
+
+
+Hooks.on("updateScene", async (scene, changes, options) => {
+  try {
+    await synchroniseExternalGlobalLightingChange(
+      scene,
+      changes,
+      options
+    );
+  } catch (error) {
+    console.error(
+      "TalkToMe failed to synchronise Foundry lighting controls.",
+      error
+    );
+  }
+});
