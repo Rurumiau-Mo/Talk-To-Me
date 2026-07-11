@@ -26,6 +26,14 @@ export class TalkToMeApp {
     this.element = null;
     this.editorElement = null;
     this.managerElement = null;
+    this.conversationElement = null;
+    this.conversationDrag = {
+      active: false,
+      startX: 0,
+      startY: 0,
+      startLeft: 0,
+      startTop: 0
+    };
     this.managerDrag = {
       active: false,
       startX: 0,
@@ -49,6 +57,10 @@ export class TalkToMeApp {
     this.boundEditorMouseUp = () => this.endEditorDrag();
     this.boundManagerMouseMove = event => this.doManagerDrag(event);
     this.boundManagerMouseUp = () => this.endManagerDrag();
+    this.boundConversationMouseMove =
+      event => this.doConversationDrag(event);
+    this.boundConversationMouseUp =
+      () => this.endConversationDrag();
   }
 
   open() {
@@ -474,6 +486,359 @@ toggleSwitchClickActivation() {
   }
 
 
+
+openConversationBuilder() {
+  if (!ttmIsGM()) {
+    ui.notifications.warn("Conversation building is a GM tool.");
+    return;
+  }
+
+  this.closeConversationBuilder();
+
+  const root = ttmMake(
+    "section",
+    null,
+    "ttm-app ttm-conversation-window window-app"
+  );
+  root.id = "talk-to-me-conversation-window";
+  root.style.left = "calc(50vw - 290px)";
+  root.style.top = "90px";
+
+  const header = ttmMake(
+    "header",
+    null,
+    "ttm-header window-header flexrow"
+  );
+  const title = ttmMake(
+    "h4",
+    "TalkToMe Conversation Builder",
+    "ttm-title window-title"
+  );
+  const close = ttmMake("button", "×", "ttm-header-button");
+  close.type = "button";
+  close.addEventListener(
+    "click",
+    () => this.closeConversationBuilder()
+  );
+
+  header.addEventListener("mousedown", event => {
+    if (event.target === close) return;
+    this.startConversationDrag(event);
+  });
+
+  ttmAdd(header, title);
+  ttmAdd(header, close);
+
+  const body = ttmMake("div", null, "ttm-body window-content");
+
+  const name = ttmMake("input");
+  name.type = "text";
+  name.placeholder = "Tavern Greeting";
+
+  const image = ttmMake("input");
+  image.type = "text";
+  image.placeholder = "icons/svg/sound.svg";
+
+  const trigger = ttmMake("select");
+  for (const [value, label] of [
+    ["enter", "Token enters tile"],
+    ["exit", "Token exits tile"],
+    ["switch", "Click / switch activation"],
+    ["manual", "Manual only"]
+  ]) {
+    const option = ttmMake("option", label);
+    option.value = value;
+    ttmAdd(trigger, option);
+  }
+
+  const clickActivation = ttmMake("select");
+  for (const [value, label] of [
+    ["left", "Left click"],
+    ["double-left", "Double left click"],
+    ["right", "Right click"],
+    ["any", "Any click"]
+  ]) {
+    const option = ttmMake("option", label);
+    option.value = value;
+    ttmAdd(clickActivation, option);
+  }
+
+  const width = ttmMake("input");
+  width.type = "number";
+  width.value = 120;
+  width.min = 32;
+
+  const height = ttmMake("input");
+  height.type = "number";
+  height.value = 120;
+  height.min = 32;
+
+  const order = ttmMake("input");
+  order.type = "text";
+  order.value = "1,1,2,2";
+  order.placeholder = "1,1,2,2,3";
+
+  const delay = ttmMake("input");
+  delay.type = "number";
+  delay.value = 3;
+  delay.min = 0.25;
+  delay.step = 0.25;
+
+  const showToPlayers = this.createCheckbox(
+    "ttm-conversation-show-players",
+    "Show starter tile to players",
+    true
+  );
+
+  const requireVision = this.createCheckbox(
+    "ttm-conversation-require-vision",
+    "Players require vision to activate",
+    false
+  );
+
+  const multipleUseConversation = this.createCheckbox(
+    "ttm-conversation-multiple-use",
+    "Multiple use",
+    true
+  );
+
+  const cooldownEnabled = this.createCheckbox(
+    "ttm-conversation-cooldown-enabled",
+    "Enable activation cooldown",
+    true
+  );
+
+  const cooldownSeconds = ttmMake("input");
+  cooldownSeconds.type = "number";
+  cooldownSeconds.value = 10;
+  cooldownSeconds.min = 0.2;
+  cooldownSeconds.step = 0.1;
+
+  const participantRows = [];
+
+  for (let index = 1; index <= 5; index += 1) {
+    const group = ttmMake(
+      "section",
+      null,
+      "ttm-conversation-participant"
+    );
+    ttmAdd(group, ttmMake("h3", `NPC ${index}`));
+
+    const token = this.createTokenSelect(
+      `ttm-conversation-token-${index}`
+    );
+    token.dataset.ttmTokenSelect = "true";
+
+    const table = this.createTableSelect(
+      `ttm-conversation-table-${index}`
+    );
+
+    const npcName = ttmMake("input");
+    npcName.type = "text";
+    npcName.placeholder = "Optional name override";
+
+    ttmAdd(group, this.createField("Speaking NPC", token));
+    ttmAdd(group, this.createField("RollTable", table));
+    ttmAdd(group, this.createField("Name override", npcName));
+    ttmAdd(body, group);
+
+    participantRows.push({ token, table, npcName });
+  }
+
+  const place = ttmMake(
+    "button",
+    "Place Conversation Tile",
+    "ttm-primary"
+  );
+  place.type = "button";
+
+  place.addEventListener("click", async () => {
+    const participants = participantRows
+      .map(row => ({
+        tokenId: row.token.value,
+        tableId: row.table.value,
+        npcName: row.npcName.value.trim()
+      }));
+
+    const assignedParticipants = participants.filter(
+      participant => participant.tableId
+    );
+
+    if (assignedParticipants.length < 2) {
+      ui.notifications.warn(
+        "Assign RollTables to at least two NPCs."
+      );
+      return;
+    }
+
+    const speakingOrder = String(order.value ?? "")
+      .split(",")
+      .map(value => Number(value.trim()))
+      .filter(value =>
+        Number.isInteger(value)
+        && value >= 1
+        && value <= 5
+      );
+
+    if (!speakingOrder.length) {
+      ui.notifications.warn(
+        "Enter a speaking order such as 1,1,2,2."
+      );
+      return;
+    }
+
+    const missingSlot = speakingOrder.find(
+      slot => !participants[slot - 1]?.tableId
+    );
+
+    if (missingSlot) {
+      ui.notifications.warn(
+        `NPC ${missingSlot} is used in the order but has no RollTable.`
+      );
+      return;
+    }
+
+    const placement = await this.pickTilePlacementPoint();
+    if (!placement) return;
+
+    const doc = await this.api.createSpeechTile({
+      x: placement.x,
+      y: placement.y,
+      name: name.value.trim() || "Conversation",
+      trigger: trigger.value,
+      clickActivation: clickActivation.value,
+      mode: "custom",
+      text: "",
+      template: "speech",
+      tileImage: image.value.trim(),
+      inactiveImage: image.value.trim(),
+      hidden: !showToPlayers.input.checked,
+      requirePlayerVision: requireVision.input.checked,
+      hideBehindWalls: true,
+      multipleUse: multipleUseConversation.input.checked,
+      activationCooldownEnabled:
+        cooldownEnabled.input.checked,
+      activationCooldownSeconds: Math.max(
+        0.2,
+        Number(cooldownSeconds.value || 10)
+      ),
+      width: Number(width.value || 120),
+      height: Number(height.value || 120),
+      conversationSequenceEnabled: true,
+      conversationParticipants: participants,
+      conversationOrder: speakingOrder,
+      conversationLineDelay: Math.max(
+        0.25,
+        Number(delay.value || 3)
+      )
+    });
+
+    if (doc) {
+      ui.notifications.info(
+        `Created conversation tile: ${doc.name}.`
+      );
+      this.closeConversationBuilder();
+    }
+  });
+
+  ttmAdd(body, this.createHint(
+    "Assign up to five NPCs and RollTables. "
+    + "The order uses NPC numbers, for example 1,1,2,2,3."
+  ));
+  ttmAdd(body, this.createField("Conversation name", name));
+  ttmAdd(body, this.createImagePickerField("Starter tile image", image));
+  ttmAdd(body, this.createField("Starter tile trigger", trigger));
+  ttmAdd(body, this.createField("Click activation", clickActivation));
+  ttmAdd(body, this.createField("Tile width", width));
+  ttmAdd(body, this.createField("Tile height", height));
+  ttmAdd(body, this.createField("Speaking order", order));
+  ttmAdd(body, this.createField("Delay between lines (seconds)", delay));
+  ttmAdd(body, showToPlayers.label);
+  ttmAdd(body, requireVision.label);
+  ttmAdd(body, multipleUseConversation.label);
+  ttmAdd(body, cooldownEnabled.label);
+  ttmAdd(body, this.createField(
+    "Activation cooldown (seconds)",
+    cooldownSeconds
+  ));
+
+  const participantsHeading = ttmMake(
+    "h2",
+    "Conversation Participants"
+  );
+  body.insertBefore(
+    participantsHeading,
+    body.querySelector(".ttm-conversation-participant")
+  );
+
+  ttmAdd(body, place);
+  ttmAdd(root, header);
+  ttmAdd(root, body);
+  document.body.appendChild(root);
+
+  this.conversationElement = root;
+  document.addEventListener(
+    "mousemove",
+    this.boundConversationMouseMove
+  );
+  document.addEventListener(
+    "mouseup",
+    this.boundConversationMouseUp
+  );
+}
+
+closeConversationBuilder() {
+  document.removeEventListener(
+    "mousemove",
+    this.boundConversationMouseMove
+  );
+  document.removeEventListener(
+    "mouseup",
+    this.boundConversationMouseUp
+  );
+
+  document
+    .getElementById("talk-to-me-conversation-window")
+    ?.remove();
+
+  this.conversationElement = null;
+}
+
+startConversationDrag(event) {
+  if (!this.conversationElement) return;
+
+  this.conversationDrag.active = true;
+  this.conversationDrag.startX = event.clientX;
+  this.conversationDrag.startY = event.clientY;
+
+  const rect = this.conversationElement.getBoundingClientRect();
+  this.conversationDrag.startLeft = rect.left;
+  this.conversationDrag.startTop = rect.top;
+
+  event.preventDefault();
+}
+
+doConversationDrag(event) {
+  if (
+    !this.conversationDrag.active
+    || !this.conversationElement
+  ) return;
+
+  this.conversationElement.style.left =
+    `${this.conversationDrag.startLeft
+      + event.clientX
+      - this.conversationDrag.startX}px`;
+
+  this.conversationElement.style.top =
+    `${this.conversationDrag.startTop
+      + event.clientY
+      - this.conversationDrag.startY}px`;
+}
+
+endConversationDrag() {
+  this.conversationDrag.active = false;
+}
+
 createTilePickerField(labelText, input) {
   const group = ttmMake("div", null, "form-group ttm-tile-picker-group");
   const label = ttmMake("label", labelText);
@@ -729,7 +1094,12 @@ pickTilePlacementPoint() {
     }
 
     const mode = ttmMake("select");
-    for (const [value, label] of [["table", "Roll from table"], ["custom", "Use custom text"]]) {
+    for (const [value, label] of [
+      ["table", "Roll from table"],
+      ["custom", "Use custom text"],
+      ["conversation-sequence", "Conversation sequence"],
+      ["conversation-advanced", "Advanced conversation"]
+    ]) {
       const opt = ttmMake("option", label);
       opt.value = value;
       ttmAdd(mode, opt);
@@ -738,6 +1108,61 @@ pickTilePlacementPoint() {
     const text = ttmMake("textarea");
     text.rows = 3;
     text.placeholder = "Custom speech for this tile.";
+
+    const conversationEnabled = this.createCheckbox(
+      "ttm-conversation-enabled",
+      "Use conversation chain",
+      false
+    );
+    const conversationId = ttmMake("input");
+    conversationId.type = "text";
+    conversationId.placeholder = "e.g. tavern-greeting";
+    const conversationStart = this.createCheckbox(
+      "ttm-conversation-start",
+      "This NPC starts the conversation",
+      false
+    );
+    const conversationStartNode = ttmMake("input");
+    conversationStartNode.type = "text";
+    conversationStartNode.value = "start";
+    const conversationNextTileId = ttmMake("input");
+    conversationNextTileId.type = "text";
+    conversationNextTileId.placeholder = "Tile for the next speaker";
+
+    const conversationOrder = ttmMake("input");
+    conversationOrder.type = "text";
+    conversationOrder.value = "1,1,2,2";
+    conversationOrder.placeholder = "1,1,2,2,3";
+
+    const conversationLineDelay = ttmMake("input");
+    conversationLineDelay.type = "number";
+    conversationLineDelay.value = 3;
+    conversationLineDelay.min = 0.25;
+    conversationLineDelay.step = 0.25;
+
+    const conversationParticipantInputs = [];
+
+    for (let index = 1; index <= 5; index += 1) {
+      const token = this.createTokenSelect(
+        `ttm-tile-conversation-token-${index}`
+      );
+      token.dataset.ttmTokenSelect = "true";
+
+      const table = this.createTableSelect(
+        `ttm-tile-conversation-table-${index}`
+      );
+
+      const npcName = ttmMake("input");
+      npcName.type = "text";
+      npcName.placeholder = "Optional name override";
+
+      conversationParticipantInputs.push({
+        slot: index,
+        token,
+        table,
+        npcName
+      });
+    }
 
     const width = ttmMake("input");
     width.type = "number";
@@ -937,6 +1362,11 @@ pickTilePlacementPoint() {
       "Enable activation cooldown",
       false
     );
+    const multipleUse = this.createCheckbox(
+      "ttm-multiple-use",
+      "Multiple use",
+      true
+    );
 
     const activationCooldownSeconds = ttmMake("input");
     activationCooldownSeconds.id = "ttm-activation-cooldown-seconds";
@@ -963,6 +1393,7 @@ pickTilePlacementPoint() {
     ttmAdd(basicGroup, showToPlayers.label);
     ttmAdd(basicGroup, requirePlayerVision.label);
     ttmAdd(basicGroup, hideBehindWalls.label);
+    ttmAdd(basicGroup, multipleUse.label);
     ttmAdd(basicGroup, activationCooldownEnabled.label);
     ttmAdd(
       basicGroup,
@@ -984,11 +1415,106 @@ pickTilePlacementPoint() {
 
     const speechGroup = makeGroup("Speech Bubble Options", ["speech"]);
     ttmAdd(speechGroup, this.createImagePickerField("Speech tile image", tileImage));
-    ttmAdd(speechGroup, this.createField("Speaking NPC token", subjectToken));
-    ttmAdd(speechGroup, this.createField("NPC chat name override", npc));
-    ttmAdd(speechGroup, this.createField("Speech mode", mode));
-    ttmAdd(speechGroup, this.createField("RollTable", tableSelect));
-    ttmAdd(speechGroup, this.createField("Custom speech", text));
+    ttmAdd(speechGroup, this.createField("Speech source", mode));
+
+    const standardSpeechGroup = ttmMake(
+      "section",
+      null,
+      "ttm-speech-source-group"
+    );
+    standardSpeechGroup.dataset.speechSources = "table,custom,conversation-advanced";
+    ttmAdd(standardSpeechGroup, this.createField("Speaking NPC token", subjectToken));
+    ttmAdd(standardSpeechGroup, this.createField("NPC chat name override", npc));
+
+    const rollTableField = this.createField("RollTable", tableSelect);
+    rollTableField.dataset.speechSourceOnly = "table,conversation-advanced";
+    ttmAdd(standardSpeechGroup, rollTableField);
+
+    const customTextField = this.createField("Custom speech", text);
+    customTextField.dataset.speechSourceOnly = "custom";
+    ttmAdd(standardSpeechGroup, customTextField);
+
+    const sequenceSpeechGroup = ttmMake(
+      "section",
+      null,
+      "ttm-speech-source-group"
+    );
+    sequenceSpeechGroup.dataset.speechSources = "conversation-sequence";
+    ttmAdd(sequenceSpeechGroup, ttmMake("h3", "Conversation Sequence"));
+    ttmAdd(
+      sequenceSpeechGroup,
+      this.createField("Speaking order", conversationOrder)
+    );
+    ttmAdd(
+      sequenceSpeechGroup,
+      this.createField(
+        "Delay between lines (seconds)",
+        conversationLineDelay
+      )
+    );
+
+    for (const participant of conversationParticipantInputs) {
+      const participantGroup = ttmMake(
+        "section",
+        null,
+        "ttm-conversation-participant"
+      );
+      ttmAdd(
+        participantGroup,
+        ttmMake("h4", `NPC ${participant.slot}`)
+      );
+      ttmAdd(
+        participantGroup,
+        this.createField("Speaking NPC", participant.token)
+      );
+      ttmAdd(
+        participantGroup,
+        this.createField("RollTable", participant.table)
+      );
+      ttmAdd(
+        participantGroup,
+        this.createField("Name override", participant.npcName)
+      );
+      ttmAdd(sequenceSpeechGroup, participantGroup);
+    }
+
+    ttmAdd(
+      sequenceSpeechGroup,
+      this.createHint(
+        "Use NPC numbers for the order, for example 1,1,2,2,3."
+      )
+    );
+
+    const advancedSpeechGroup = ttmMake(
+      "section",
+      null,
+      "ttm-speech-source-group"
+    );
+    advancedSpeechGroup.dataset.speechSources = "conversation-advanced";
+    ttmAdd(advancedSpeechGroup, ttmMake("h3", "Advanced Conversation"));
+    ttmAdd(advancedSpeechGroup, this.createField("Conversation ID", conversationId));
+    ttmAdd(advancedSpeechGroup, conversationStart.label);
+    ttmAdd(
+      advancedSpeechGroup,
+      this.createField("Starting node", conversationStartNode)
+    );
+    ttmAdd(
+      advancedSpeechGroup,
+      this.createTilePickerField(
+        "Next speaker tile",
+        conversationNextTileId
+      )
+    );
+    ttmAdd(
+      advancedSpeechGroup,
+      this.createHint(
+        "Result format: [[node:start|next:reply-1]] Spoken text."
+      )
+    );
+
+    ttmAdd(speechGroup, standardSpeechGroup);
+    ttmAdd(speechGroup, sequenceSpeechGroup);
+    ttmAdd(speechGroup, advancedSpeechGroup);
     ttmAdd(speechGroup, postChat.label);
     ttmAdd(speechGroup, zoomToSpeaker.label);
 
@@ -1043,6 +1569,41 @@ pickTilePlacementPoint() {
     const create = ttmMake("button", "Place Template Tile", "ttm-primary");
     create.type = "button";
     create.addEventListener("click", async () => {
+      if (
+        template.value === "speech"
+        && mode.value === "conversation-sequence"
+      ) {
+        const orderValues = String(conversationOrder.value ?? "")
+          .split(",")
+          .map(value => Number(value.trim()))
+          .filter(value => Number.isInteger(value));
+
+        if (!orderValues.length) {
+          ui.notifications.warn(
+            "Enter a speaking order such as 1,1,2,2."
+          );
+          return;
+        }
+
+        const missingSlot = orderValues.find(slot => {
+          return (
+            slot < 1
+            || slot > 5
+            || !conversationParticipantInputs[
+              slot - 1
+            ]?.table.value
+          );
+        });
+
+        if (missingSlot) {
+          ui.notifications.warn(
+            `NPC ${missingSlot} is used in the speaking order `
+            + "but has no RollTable assigned."
+          );
+          return;
+        }
+      }
+
       if (template.value === "switch" && targetTileId.value.trim()) {
         const linkedTile = canvas.scene?.tiles?.get(targetTileId.value.trim());
 
@@ -1069,13 +1630,59 @@ pickTilePlacementPoint() {
         subjectTokenId: subjectToken.value,
         tableId: tableSelect.value,
         trigger: trigger.value,
-        mode: mode.value,
-        text: text.value.trim(),
+        mode: mode.value === "custom" ? "custom" : "table",
+        text: mode.value === "custom" ? text.value.trim() : "",
+        conversationEnabled:
+          mode.value === "conversation-advanced",
+        conversationId:
+          mode.value === "conversation-advanced"
+            ? conversationId.value.trim()
+            : "",
+        conversationStart:
+          mode.value === "conversation-advanced"
+            && conversationStart.input.checked,
+        conversationStartNode:
+          mode.value === "conversation-advanced"
+            ? (conversationStartNode.value.trim() || "start")
+            : "start",
+        conversationNextTileId:
+          mode.value === "conversation-advanced"
+            ? conversationNextTileId.value.trim()
+            : "",
+        conversationSequenceEnabled:
+          mode.value === "conversation-sequence",
+        conversationParticipants:
+          mode.value === "conversation-sequence"
+            ? conversationParticipantInputs.map(participant => ({
+                tokenId: participant.token.value,
+                tableId: participant.table.value,
+                npcName: participant.npcName.value.trim()
+              }))
+            : [],
+        conversationOrder:
+          mode.value === "conversation-sequence"
+            ? String(conversationOrder.value ?? "")
+                .split(",")
+                .map(value => Number(value.trim()))
+                .filter(value =>
+                  Number.isInteger(value)
+                  && value >= 1
+                  && value <= 5
+                )
+            : [],
+        conversationLineDelay:
+          mode.value === "conversation-sequence"
+            ? Math.max(
+                0.25,
+                Number(conversationLineDelay.value || 3)
+              )
+            : 3,
         postChat: postChat.input.checked,
         zoomToSpeaker: zoomToSpeaker.input.checked,
         hidden: !showToPlayers.input.checked,
         requirePlayerVision: requirePlayerVision.input.checked,
         hideBehindWalls: hideBehindWalls.input.checked,
+        multipleUse: multipleUse.input.checked,
         activationCooldownEnabled: activationCooldownEnabled.input.checked,
         activationCooldownSeconds: Math.max(
           0.2,
@@ -1132,20 +1739,47 @@ pickTilePlacementPoint() {
 const updateTemplateVisibility = () => {
   const selected = template.value;
   const selectedTrigger = trigger.value;
+  const speechSource = mode.value;
 
   for (const group of panel.querySelectorAll(".ttm-template-group")) {
     const templates = String(group.dataset.templates || "").split(",");
     const triggerOnly = group.dataset.triggerOnly;
 
     const templateMatches = templates.includes(selected);
-    const triggerMatches = !triggerOnly || triggerOnly === selectedTrigger;
+    const triggerMatches =
+      !triggerOnly || triggerOnly === selectedTrigger;
 
     group.hidden = !(templateMatches && triggerMatches);
+  }
+
+  for (const group of panel.querySelectorAll(
+    ".ttm-speech-source-group"
+  )) {
+    const sources = String(
+      group.dataset.speechSources || ""
+    ).split(",");
+
+    group.hidden =
+      selected !== "speech"
+      || !sources.includes(speechSource);
+  }
+
+  for (const field of panel.querySelectorAll(
+    "[data-speech-source-only]"
+  )) {
+    const supportedSources = String(
+      field.dataset.speechSourceOnly || ""
+    ).split(",");
+
+    field.hidden =
+      selected !== "speech"
+      || !supportedSources.includes(speechSource);
   }
 };
 
     template.addEventListener("change", updateTemplateVisibility);
     trigger.addEventListener("change", updateTemplateVisibility);
+    mode.addEventListener("change", updateTemplateVisibility);
     const updateCooldownField = () => {
       activationCooldownSeconds.disabled =
         !activationCooldownEnabled.input.checked;
@@ -1213,6 +1847,7 @@ openTileManager() {
   root.id = "talk-to-me-tile-manager-window";
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-label", "Manage TalkToMe Tiles");
+  root.dataset.sceneId = canvas.scene?.id ?? "";
   root.style.left = "calc(50vw - 260px)";
   root.style.top = "100px";
 
@@ -1223,7 +1858,7 @@ openTileManager() {
   );
   const title = ttmMake(
     "h4",
-    "Manage TalkToMe Tiles",
+    `Manage TalkToMe Tiles — ${canvas.scene?.name ?? "Current Scene"}`,
     "ttm-title window-title"
   );
   const close = ttmMake("button", "×", "ttm-header-button");
@@ -1369,7 +2004,15 @@ refreshTileManagerList() {
   );
   if (!list) return;
 
-  const docs = this.getTalkToMeTiles();
+  const managerSceneId = this.managerElement?.dataset.sceneId;
+  const currentSceneId = canvas.scene?.id;
+
+  if (!currentSceneId || managerSceneId !== currentSceneId) {
+    this.closeTileManager();
+    return;
+  }
+
+  const docs = this.getTalkToMeTiles(canvas.scene);
   list.innerHTML = "";
 
   if (!docs.length) {
@@ -1559,11 +2202,16 @@ endEditorDrag() {
 }
 
 
-getTalkToMeTiles() {
-  return (canvas.scene?.tiles?.contents ?? [])
+getTalkToMeTiles(scene = canvas.scene) {
+  if (!scene || scene.id !== canvas.scene?.id) return [];
+
+  return (scene.tiles?.contents ?? [])
     .filter(tileDoc => {
+      if (tileDoc.parent?.id !== scene.id) return false;
+
       const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
       const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
+
       return Boolean(utility.template || speech.managed);
     })
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
@@ -1697,7 +2345,9 @@ createTileEditorBox() {
 
   const speechMode = makeSelect([
     ["table", "Roll from table"],
-    ["custom", "Use custom text"]
+    ["custom", "Use custom text"],
+    ["conversation-sequence", "Conversation sequence"],
+    ["conversation-advanced", "Advanced conversation"]
   ]);
   const speechTable = this.createTableSelect("ttm-edit-speech-table");
   const speechText = ttmMake("textarea");
@@ -1708,6 +2358,55 @@ createTileEditorBox() {
     "ttm-edit-speech-subject-token"
   );
   speechSubjectToken.dataset.ttmTokenSelect = "true";
+
+  const conversationEnabledEdit = this.createCheckbox(
+    "ttm-edit-conversation-enabled",
+    "Use conversation chain",
+    false
+  );
+  const conversationIdEdit = makeInput();
+  const conversationStartEdit = this.createCheckbox(
+    "ttm-edit-conversation-start",
+    "This NPC starts the conversation",
+    false
+  );
+  const conversationStartNodeEdit = makeInput();
+  const conversationNextTileIdEdit = makeInput();
+
+  const conversationSequenceEnabledEdit = this.createCheckbox(
+    "ttm-edit-conversation-sequence-enabled",
+    "Use simple conversation sequence",
+    false
+  );
+
+  const conversationOrderEdit = makeInput();
+  conversationOrderEdit.placeholder = "1,1,2,2,3";
+
+  const conversationLineDelayEdit = makeNumber("0.25", 0.25);
+  conversationLineDelayEdit.value = 3;
+
+  const conversationParticipantEditors = [];
+
+  for (let index = 1; index <= 5; index += 1) {
+    const token = this.createTokenSelect(
+      `ttm-edit-conversation-token-${index}`
+    );
+    token.dataset.ttmTokenSelect = "true";
+
+    const table = this.createTableSelect(
+      `ttm-edit-conversation-table-${index}`
+    );
+
+    const npcName = makeInput();
+    npcName.placeholder = "Optional name override";
+
+    conversationParticipantEditors.push({
+      slot: index,
+      token,
+      table,
+      npcName
+    });
+  }
 
   const postChat = this.createCheckbox(
     "ttm-edit-post-chat",
@@ -1735,6 +2434,12 @@ createTileEditorBox() {
     "Hide from players when blocked by walls",
     true
   );
+  const multipleUseEdit = this.createCheckbox(
+    "ttm-edit-multiple-use",
+    "Multiple use",
+    true
+  );
+
   const cooldownEnabled = this.createCheckbox(
     "ttm-edit-cooldown-enabled",
     "Enable activation cooldown",
@@ -1783,6 +2488,7 @@ createTileEditorBox() {
   ttmAdd(commonGroup, showToPlayers.label);
   ttmAdd(commonGroup, requireVision.label);
   ttmAdd(commonGroup, hideBehindWalls.label);
+  ttmAdd(commonGroup, multipleUseEdit.label);
   ttmAdd(commonGroup, cooldownEnabled.label);
   ttmAdd(commonGroup, this.createField(
     "Pause after activation (seconds)",
@@ -1791,10 +2497,126 @@ createTileEditorBox() {
 
   const speechGroup = makeGroup("Speech Settings", ["speech"]);
   ttmAdd(speechGroup, this.createField("Speech source", speechMode));
-  ttmAdd(speechGroup, this.createField("RollTable", speechTable));
-  ttmAdd(speechGroup, this.createField("Custom speech", speechText));
-  ttmAdd(speechGroup, this.createField("NPC name override", speechNpcName));
-  ttmAdd(speechGroup, this.createField("Speaker token", speechSubjectToken));
+
+  const standardSpeechEditorGroup = ttmMake(
+    "section",
+    null,
+    "ttm-editor-standard-speech"
+  );
+
+  const editorRollTableField = this.createField(
+    "RollTable",
+    speechTable
+  );
+  const editorCustomTextField = this.createField(
+    "Custom speech",
+    speechText
+  );
+
+  ttmAdd(standardSpeechEditorGroup, editorRollTableField);
+  ttmAdd(standardSpeechEditorGroup, editorCustomTextField);
+  ttmAdd(
+    standardSpeechEditorGroup,
+    this.createField("NPC name override", speechNpcName)
+  );
+  ttmAdd(
+    standardSpeechEditorGroup,
+    this.createField("Speaker token", speechSubjectToken)
+  );
+
+  ttmAdd(speechGroup, standardSpeechEditorGroup);
+  const sequenceConversationGroup = ttmMake(
+    "section",
+    null,
+    "ttm-editor-conversation-sequence"
+  );
+
+  ttmAdd(
+    sequenceConversationGroup,
+    ttmMake("h3", "Conversation Sequence Settings")
+  );
+  ttmAdd(
+    sequenceConversationGroup,
+    this.createField("Speaking order", conversationOrderEdit)
+  );
+  ttmAdd(
+    sequenceConversationGroup,
+    this.createField(
+      "Delay between lines (seconds)",
+      conversationLineDelayEdit
+    )
+  );
+
+  for (const participant of conversationParticipantEditors) {
+    const participantGroup = ttmMake(
+      "section",
+      null,
+      "ttm-conversation-participant"
+    );
+
+    ttmAdd(
+      participantGroup,
+      ttmMake("h4", `NPC ${participant.slot}`)
+    );
+    ttmAdd(
+      participantGroup,
+      this.createField("Speaking token", participant.token)
+    );
+    ttmAdd(
+      participantGroup,
+      this.createField("RollTable", participant.table)
+    );
+    ttmAdd(
+      participantGroup,
+      this.createField("Name override", participant.npcName)
+    );
+
+    ttmAdd(sequenceConversationGroup, participantGroup);
+  }
+
+  ttmAdd(
+    sequenceConversationGroup,
+    this.createHint(
+      "The speaking order uses NPC numbers, for example 1,1,2,2,3."
+    )
+  );
+
+  const advancedConversationGroup = ttmMake(
+    "section",
+    null,
+    "ttm-editor-advanced-conversation"
+  );
+
+  ttmAdd(
+    advancedConversationGroup,
+    ttmMake("h3", "Advanced Node Conversation")
+  );
+  ttmAdd(
+    advancedConversationGroup,
+    this.createField("Conversation ID", conversationIdEdit)
+  );
+  ttmAdd(advancedConversationGroup, conversationStartEdit.label);
+  ttmAdd(
+    advancedConversationGroup,
+    this.createField("Starting node", conversationStartNodeEdit)
+  );
+  ttmAdd(
+    advancedConversationGroup,
+    this.createTilePickerField(
+      "Next speaker tile",
+      conversationNextTileIdEdit
+    )
+  );
+  ttmAdd(
+    advancedConversationGroup,
+    this.createHint(
+      "Advanced result format: "
+      + "[[node:start|next:reply-1]] Spoken text."
+    )
+  );
+
+  ttmAdd(speechGroup, sequenceConversationGroup);
+  ttmAdd(speechGroup, advancedConversationGroup);
   ttmAdd(speechGroup, postChat.label);
   ttmAdd(speechGroup, zoomToSpeaker.label);
 
@@ -1879,8 +2701,38 @@ createTileEditorBox() {
   };
 
   const updateSpeechMode = () => {
-    speechTable.disabled = speechMode.value !== "table";
-    speechText.disabled = speechMode.value !== "custom";
+    const modeValue = speechMode.value;
+    const isTable = modeValue === "table";
+    const isCustom = modeValue === "custom";
+    const isSequence = modeValue === "conversation-sequence";
+    const isAdvanced = modeValue === "conversation-advanced";
+
+    standardSpeechEditorGroup.hidden = isSequence;
+
+    editorRollTableField.hidden =
+      !(isTable || isAdvanced);
+    editorCustomTextField.hidden = !isCustom;
+
+    speechTable.disabled = !(isTable || isAdvanced);
+    speechText.disabled = !isCustom;
+
+    sequenceConversationGroup.hidden = !isSequence;
+    advancedConversationGroup.hidden = !isAdvanced;
+
+    sequenceConversationGroup
+      .querySelectorAll("input, select, textarea")
+      .forEach(control => {
+        control.disabled = !isSequence;
+      });
+
+    advancedConversationGroup
+      .querySelectorAll("input, select, textarea")
+      .forEach(control => {
+        control.disabled = !isAdvanced;
+      });
+
+    conversationSequenceEnabledEdit.input.checked = isSequence;
+    conversationEnabledEdit.input.checked = isAdvanced;
   };
 
   const updateTemplateGroups = () => {
@@ -1972,11 +2824,54 @@ createTileEditorBox() {
     teleportAvoidTiles.input.checked =
       utility.teleportAvoidTiles !== false;
 
-    speechMode.value = speech.mode ?? "table";
+    if (speech.conversationSequenceEnabled === true) {
+      speechMode.value = "conversation-sequence";
+    } else if (speech.conversationEnabled === true) {
+      speechMode.value = "conversation-advanced";
+    } else {
+      speechMode.value = speech.mode ?? "table";
+    }
+
     speechTable.value = speech.tableId ?? "";
     speechText.value = speech.text ?? "";
     speechNpcName.value = speech.npcName ?? "";
     speechSubjectToken.value = speech.subjectTokenId ?? "";
+    conversationEnabledEdit.input.checked =
+      speech.conversationEnabled === true;
+    conversationIdEdit.value = speech.conversationId ?? "";
+    conversationStartEdit.input.checked =
+      speech.conversationStart === true;
+    conversationStartNodeEdit.value =
+      speech.conversationStartNode ?? "start";
+    conversationNextTileIdEdit.value =
+      speech.conversationNextTileId ?? "";
+
+    conversationSequenceEnabledEdit.input.checked =
+      speech.conversationSequenceEnabled === true;
+
+    conversationOrderEdit.value = Array.isArray(
+      speech.conversationOrder
+    )
+      ? speech.conversationOrder.join(",")
+      : "";
+
+    conversationLineDelayEdit.value = Number(
+      speech.conversationLineDelay ?? 3
+    );
+
+    const participants = Array.isArray(
+      speech.conversationParticipants
+    )
+      ? speech.conversationParticipants
+      : [];
+
+    for (const editor of conversationParticipantEditors) {
+      const participant = participants[editor.slot - 1] ?? {};
+      editor.token.value = participant.tokenId ?? "";
+      editor.table.value = participant.tableId ?? "";
+      editor.npcName.value = participant.npcName ?? "";
+    }
+
     postChat.input.checked = speech.postChat === true;
     zoomToSpeaker.input.checked = speech.zoomToSpeaker === true;
 
@@ -1985,6 +2880,8 @@ createTileEditorBox() {
       utility.requirePlayerVision === true;
     hideBehindWalls.input.checked =
       utility.hideBehindWalls === true;
+    multipleUseEdit.input.checked =
+      utility.multipleUse !== false;
     cooldownEnabled.input.checked =
       utility.activationCooldownEnabled === true;
     cooldownSeconds.value = Number(
@@ -2003,6 +2900,10 @@ createTileEditorBox() {
   template.addEventListener("change", updateTemplateGroups);
   trigger.addEventListener("change", updateTemplateGroups);
   speechMode.addEventListener("change", updateSpeechMode);
+  conversationSequenceEnabledEdit.input.addEventListener(
+    "change",
+    updateSpeechMode
+  );
   cooldownEnabled.input.addEventListener(
     "change",
     updateCooldownState
@@ -2033,6 +2934,43 @@ createTileEditorBox() {
     const currentSpeech =
       tileDoc.getFlag(TTM_ID, "speech") ?? {};
     const selectedTemplate = template.value;
+
+    if (
+      selectedTemplate === "speech"
+      && speechMode.value === "conversation-sequence"
+    ) {
+      const orderValues = String(
+        conversationOrderEdit.value ?? ""
+      )
+        .split(",")
+        .map(value => Number(value.trim()))
+        .filter(value => Number.isInteger(value));
+
+      if (!orderValues.length) {
+        ui.notifications.warn(
+          "Enter a conversation speaking order such as 1,1,2,2."
+        );
+        return;
+      }
+
+      const missingSlot = orderValues.find(slot => {
+        return (
+          slot < 1
+          || slot > 5
+          || !conversationParticipantEditors[
+            slot - 1
+          ]?.table.value
+        );
+      });
+
+      if (missingSlot) {
+        ui.notifications.warn(
+          `NPC ${missingSlot} is used in the speaking order `
+          + "but has no RollTable assigned."
+        );
+        return;
+      }
+    }
     const chosenInactiveImage = inactiveImage.value.trim();
     const chosenLinkedId = linkedTileId.value.trim();
 
@@ -2047,6 +2985,7 @@ createTileEditorBox() {
       targetTileId: chosenLinkedId,
       requirePlayerVision: requireVision.input.checked,
       hideBehindWalls: hideBehindWalls.input.checked,
+      multipleUse: multipleUseEdit.input.checked,
       activationCooldownEnabled: cooldownEnabled.input.checked,
       activationCooldownSeconds: Math.max(
         0.2,
@@ -2103,6 +3042,7 @@ createTileEditorBox() {
       activeImage: activeImage.value.trim(),
       requirePlayerVision: requireVision.input.checked,
       hideBehindWalls: hideBehindWalls.input.checked,
+      multipleUse: multipleUseEdit.input.checked,
       activationCooldownEnabled: cooldownEnabled.input.checked,
       activationCooldownSeconds: Math.max(
         0.2,
@@ -2133,7 +3073,11 @@ createTileEditorBox() {
         clickActivation: clickActivation.value,
         tileImage: chosenInactiveImage,
         mode: selectedTemplate === "speech"
-          ? speechMode.value
+          ? (
+              speechMode.value === "custom"
+                ? "custom"
+                : "table"
+            )
           : currentSpeech.mode,
         tableId: selectedTemplate === "speech"
           ? speechTable.value
@@ -2152,7 +3096,52 @@ createTileEditorBox() {
           : currentSpeech.postChat,
         zoomToSpeaker: selectedTemplate === "speech"
           ? zoomToSpeaker.input.checked
-          : currentSpeech.zoomToSpeaker
+          : currentSpeech.zoomToSpeaker,
+        conversationEnabled: selectedTemplate === "speech"
+          ? speechMode.value === "conversation-advanced"
+          : currentSpeech.conversationEnabled,
+        conversationId: selectedTemplate === "speech"
+          ? conversationIdEdit.value.trim()
+          : currentSpeech.conversationId,
+        conversationStart: selectedTemplate === "speech"
+          ? conversationStartEdit.input.checked
+          : currentSpeech.conversationStart,
+        conversationStartNode: selectedTemplate === "speech"
+          ? (conversationStartNodeEdit.value.trim() || "start")
+          : currentSpeech.conversationStartNode,
+        conversationNextTileId: selectedTemplate === "speech"
+          ? conversationNextTileIdEdit.value.trim()
+          : currentSpeech.conversationNextTileId,
+        conversationSequenceEnabled:
+          selectedTemplate === "speech"
+            ? speechMode.value === "conversation-sequence"
+            : currentSpeech.conversationSequenceEnabled,
+        conversationParticipants:
+          selectedTemplate === "speech"
+            ? conversationParticipantEditors.map(editor => ({
+                tokenId: editor.token.value,
+                tableId: editor.table.value,
+                npcName: editor.npcName.value.trim()
+              }))
+            : currentSpeech.conversationParticipants,
+        conversationOrder:
+          selectedTemplate === "speech"
+            ? String(conversationOrderEdit.value ?? "")
+                .split(",")
+                .map(value => Number(value.trim()))
+                .filter(value =>
+                  Number.isInteger(value)
+                  && value >= 1
+                  && value <= 5
+                )
+            : currentSpeech.conversationOrder,
+        conversationLineDelay:
+          selectedTemplate === "speech"
+            ? Math.max(
+                0.25,
+                Number(conversationLineDelayEdit.value || 3)
+              )
+            : currentSpeech.conversationLineDelay
       },
       { inplace: false }
     );
