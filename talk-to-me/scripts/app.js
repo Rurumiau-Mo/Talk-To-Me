@@ -475,7 +475,12 @@ createTilePickerField(labelText, input) {
     }
 
     input.value = tile.document.id;
-    ui.notifications.info(`TalkToMe selected tile: ${tile.document.id}`);
+    input.dataset.selectedTileName = tile.document.name ?? tile.document.id;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+
+    ui.notifications.info(
+      `TalkToMe linked tile selected: ${tile.document.name ?? "Unnamed Tile"} (${tile.document.id})`
+    );
   });
 
   const goTiles = ttmMake("button", "🧩", "ttm-icon-button");
@@ -907,6 +912,18 @@ pickTilePlacementPoint() {
       "Hide this tile from players when walls block vision",
       true
     );
+    const activationCooldownEnabled = this.createCheckbox(
+      "ttm-activation-cooldown-enabled",
+      "Enable activation cooldown",
+      false
+    );
+
+    const activationCooldownSeconds = ttmMake("input");
+    activationCooldownSeconds.id = "ttm-activation-cooldown-seconds";
+    activationCooldownSeconds.type = "number";
+    activationCooldownSeconds.value = 1;
+    activationCooldownSeconds.min = 0.2;
+    activationCooldownSeconds.step = 0.1;
     const postChat = this.createCheckbox("ttm-tile-post-chat", "Tile also posts to chat", game.settings.get(TTM_ID, "postChatByDefault"));
     const zoomToSpeaker = this.createCheckbox("ttm-tile-zoom", "Pan/zoom to speaking NPC", game.settings.get(TTM_ID, "zoomToSpeakerByDefault"));
 
@@ -926,6 +943,11 @@ pickTilePlacementPoint() {
     ttmAdd(basicGroup, showToPlayers.label);
     ttmAdd(basicGroup, requirePlayerVision.label);
     ttmAdd(basicGroup, hideBehindWalls.label);
+    ttmAdd(basicGroup, activationCooldownEnabled.label);
+    ttmAdd(
+      basicGroup,
+      this.createField("Pause after activation (seconds)", activationCooldownSeconds)
+    );
 
     const universalTriggerGroup = makeGroup("Switch Activated Trigger Options", ["speech", "switch", "light", "trap", "teleport", "reset"]);
     universalTriggerGroup.dataset.triggerOnly = "switch";
@@ -1001,6 +1023,21 @@ pickTilePlacementPoint() {
     const create = ttmMake("button", "Place Template Tile", "ttm-primary");
     create.type = "button";
     create.addEventListener("click", async () => {
+      if (template.value === "switch" && targetTileId.value.trim()) {
+        const linkedTile = canvas.scene?.tiles?.get(targetTileId.value.trim());
+
+        if (!linkedTile) {
+          ui.notifications.warn(
+            "The selected Linked Tile ID is not present on the current scene."
+          );
+          return;
+        }
+
+        ui.notifications.info(
+          `TalkToMe switch linked to: ${linkedTile.name ?? "Unnamed Tile"} (${linkedTile.id})`
+        );
+      }
+
       const placement = await this.pickTilePlacementPoint();
       if (!placement) return;
 
@@ -1019,6 +1056,11 @@ pickTilePlacementPoint() {
         hidden: !showToPlayers.input.checked,
         requirePlayerVision: requirePlayerVision.input.checked,
         hideBehindWalls: hideBehindWalls.input.checked,
+        activationCooldownEnabled: activationCooldownEnabled.input.checked,
+        activationCooldownSeconds: Math.max(
+          0.2,
+          Number(activationCooldownSeconds.value || 1)
+        ),
         width: Number(width.value || 100),
         height: Number(height.value || 100),
         clickActivation: clickActivation.value,
@@ -1084,6 +1126,16 @@ const updateTemplateVisibility = () => {
 
     template.addEventListener("change", updateTemplateVisibility);
     trigger.addEventListener("change", updateTemplateVisibility);
+    const updateCooldownField = () => {
+      activationCooldownSeconds.disabled =
+        !activationCooldownEnabled.input.checked;
+    };
+
+    activationCooldownEnabled.input.addEventListener(
+      "change",
+      updateCooldownField
+    );
+
     showToPlayers.input.addEventListener("change", updateTemplateVisibility);
 
     ttmAdd(panel, this.createHint("Choose a template to show only the relevant setup options."));
@@ -1101,7 +1153,10 @@ const updateTemplateVisibility = () => {
     ttmAdd(panel, ttmMake("h3", "Managed Trigger Tiles"));
     ttmAdd(panel, list);
 
-    setTimeout(updateTemplateVisibility, 0);
+    setTimeout(() => {
+      updateTemplateVisibility();
+      updateCooldownField();
+    }, 0);
 
     return panel;
   }

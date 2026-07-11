@@ -1,5 +1,6 @@
 import { TTM_ID, TTM_SOCKET_ACTIONS } from "./constants.js";
 import { placementManager } from "./placement-manager.js";
+import { applyUtilityTemplateActions } from "./utilities.js";
 
 class ActivationManager {
   constructor(api) {
@@ -93,7 +94,14 @@ class ActivationManager {
     const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
     const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
     const trigger = speech.trigger ?? utility.trigger ?? "manual";
-    return speech.managed === true && trigger === "switch";
+    const template = utility.template ?? "speech";
+    const isTalkToMeTile = speech.managed === true || Boolean(utility.template);
+
+    // Reset tiles are explicit click controls and must not depend on
+    // legacy speech trigger flags saved on older tile documents.
+    if (template === "reset") return true;
+
+    return isTalkToMeTile && trigger === "switch";
   }
 
   matches(clickType, activation = "left") {
@@ -371,6 +379,14 @@ refreshTileVisibility() {
 
   async execute(tileDoc, token = null) {
     const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
+    const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
+
+    // Utility clicks use one dispatcher. It owns the cooldown check and
+    // performs the configured Light, Reset, Switch, Trap, or Teleport action.
+    if (utility.template && utility.template !== "speech") {
+      return applyUtilityTemplateActions(this.api, tileDoc, token);
+    }
+
     return this.api.triggerSpeechTile(tileDoc.id, token, {
       postChat: speech.postChat,
       zoomToSpeaker: speech.zoomToSpeaker
