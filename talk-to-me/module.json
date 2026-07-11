@@ -1,8 +1,8 @@
 {
   "id": "talk-to-me",
   "title": "TalkToMe",
-  "description": "A Foundry VTT v14 GM utility for MATT-friendly utility tile templates, synchronized NPC bubbles, RollTable speech, switches, lights, traps, teleports, and reset tiles.",
-  "version": "0.7.38",
+  "description": "Create interactive speech, utility, teleport, light, trap, reset, and conversation tiles for Foundry Virtual Tabletop.",
+  "version": "1.0.0",
   "compatibility": {
     "minimum": "14",
     "verified": "14"

@@ -1,5 +1,11 @@
+// =============================================================================
+// Conversation
+// =============================================================================
+// Runs simple conversation sequences and advanced node-based conversations.
+
 import { TTM_ID } from "./constants.js";
 
+// Advanced conversation state
 const CONVERSATION_FLAG = "conversationStates";
 
 function normalise(value) {
@@ -103,6 +109,7 @@ export function getConversationState(conversationId, scene = canvas.scene) {
   return getStates(scene)[conversationId] ?? null;
 }
 
+// Resolve advanced conversation line
 export async function resolveConversationLine(tileDoc, table, speech) {
   const scene = tileDoc?.parent ?? canvas.scene;
 
@@ -199,6 +206,7 @@ export function conversationResultSyntaxExample() {
 }
 
 
+// Simple conversation playback
 const activeConversationSequences = new Set();
 
 function sequenceKey(tileDoc) {
@@ -209,6 +217,7 @@ function wait(milliseconds) {
   return new Promise(resolve => window.setTimeout(resolve, milliseconds));
 }
 
+// Play ordered RollTable conversation
 export async function playConversationSequence(
   api,
   tileDoc,

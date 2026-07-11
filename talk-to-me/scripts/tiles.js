@@ -1,3 +1,8 @@
+// =============================================================================
+// Tiles
+// =============================================================================
+// Creates TalkToMe tiles and runs speech-tile activation.
+
 import {
   TTM_ID,
   TTM_MATT_ID,
@@ -115,7 +120,8 @@ export function templateLabel(template = "speech", trigger = "enter") {
   const labels = {
     speech: TTM_PRESET_LABELS[trigger] || "Speech Tile",
     switch: "Switch Activation",
-    light: "Light Activation",
+    light: "Ambient Light",
+    globalLight: "Global Lighting",
     trap: "Trap Activation",
     teleport: "Teleport Activation",
     reset: "Create Reset Tile"
@@ -347,6 +353,7 @@ await api.toggleLightTileById("${macroTileId}", activatingUserId, activatingToke
 
 
 
+// Create TalkToMe tile
 export async function createSpeechTile({
   x = null,
   y = null,
@@ -381,6 +388,11 @@ export async function createSpeechTile({
   lightColor = "#ffffff",
   lightAlpha = 0.5,
   lightAnimation = "",
+  globalLightAction = "toggle",
+  globalDarkness = 0.75,
+  globalLightColorOverride = false,
+  globalLightColor = "#ffffff",
+  globalLightUseFoundryFade = true,
   saveAbility = "dex",
   saveDC = 10,
   trapTarget = "triggering-token",
@@ -469,6 +481,11 @@ export async function createSpeechTile({
         lightColor,
         lightAlpha,
         lightAnimation,
+        globalLightAction,
+        globalDarkness: Math.max(0, Math.min(1, Number(globalDarkness ?? 0.75))),
+        globalLightColorOverride,
+        globalLightColor,
+        globalLightUseFoundryFade: true,
         saveAbility,
         saveDC,
         trapTarget,
@@ -511,6 +528,11 @@ export async function createSpeechTile({
           lightColor,
           lightAlpha,
           lightAnimation,
+          globalLightAction,
+          globalDarkness: Math.max(0, Math.min(1, Number(globalDarkness ?? 0.75))),
+          globalLightColorOverride,
+          globalLightColor,
+          globalLightUseFoundryFade: true,
           teleportX,
           teleportY,
           teleportOffsetX,
@@ -621,6 +643,7 @@ export async function createSpeechTile({
   return doc ?? null;
 }
 
+// Activate speech tile
 export async function triggerSpeechTile(api, tileId, tokenLike = null, overrides = {}) {
   const doc = canvas.scene?.tiles?.get(tileId);
   if (!doc) return ttmNotice("warn", "Speech tile not found.");

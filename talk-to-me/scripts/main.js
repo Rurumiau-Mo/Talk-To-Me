@@ -1,6 +1,12 @@
+// =============================================================================
+// Main
+// =============================================================================
+// Bootstraps the module, installs the API, starts migrations, and creates the fallback launcher.
+
 const TTM_ID = "talk-to-me";
 const TTM_TITLE = "TalkToMe";
 
+// Fallback launcher
 function createFallbackButton() {
   if (!game.user?.isGM) return;
   if (document.getElementById("talk-to-me-floating-launcher")) return;
@@ -93,10 +99,12 @@ async function installFullApi() {
   console.log(`${TTM_TITLE} full API ready.`, api);
 }
 
+// Module initialisation
 Hooks.once("init", () => {
   registerModuleHooksAndSettings();
 });
 
+// Module ready
 Hooks.once("ready", async () => {
   try {
     createFallbackButton();

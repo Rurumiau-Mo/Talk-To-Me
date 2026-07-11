@@ -19,6 +19,7 @@ export const TTM_TEMPLATES = {
   SPEECH: "speech",
   SWITCH: "switch",
   LIGHT: "light",
+  GLOBAL_LIGHT: "globalLight",
   TRAP: "trap",
   TELEPORT: "teleport",
   RESET: "reset"
@@ -28,6 +29,211 @@ export const TTM_TEMPLATES = {
 
 
 
+// Global scene lighting
+const GLOBAL_LIGHT_STATE_FLAG = "originalGlobalLighting";
+const globalLightingTransitions = new Map();
+
+function transitionKey(scene) {
+  return scene?.id ?? "scene";
+}
+
+function beginGlobalLightingTransition(scene) {
+  const key = transitionKey(scene);
+  const token = Symbol(`talk-to-me-global-light-${key}`);
+  globalLightingTransitions.set(key, token);
+  return token;
+}
+
+function ownsGlobalLightingTransition(scene, token) {
+  return globalLightingTransitions.get(
+    transitionKey(scene)
+  ) === token;
+}
+
+export function cancelGlobalLightingTransition(scene = canvas.scene) {
+  if (!scene) return false;
+
+  globalLightingTransitions.delete(transitionKey(scene));
+  return true;
+}
+
+function getSceneGlobalLighting(scene = canvas.scene) {
+  const environment = scene?.environment ?? {};
+  const globalLight = environment.globalLight ?? {};
+
+  return {
+    darknessLevel: Number(environment.darknessLevel ?? 0),
+    enabled: Boolean(globalLight.enabled),
+    bright: Boolean(globalLight.bright),
+    color: globalLight.color ?? null
+  };
+}
+
+async function ensureOriginalGlobalLighting(scene = canvas.scene) {
+  if (!scene) return null;
+
+  const existing = scene.getFlag(TTM_ID, GLOBAL_LIGHT_STATE_FLAG);
+  if (existing) return existing;
+
+  const original = getSceneGlobalLighting(scene);
+  await scene.setFlag(TTM_ID, GLOBAL_LIGHT_STATE_FLAG, original);
+  return original;
+}
+
+async function updateSceneGlobalLighting(
+  scene,
+  updates
+) {
+  if (!scene) return false;
+
+  beginGlobalLightingTransition(scene);
+
+  try {
+    // Foundry performs and broadcasts its standard darkness animation.
+    // One Scene update keeps the GM and every player client in sync.
+    await scene.update(
+      { ...updates },
+      {
+        animateDarkness: true,
+        talkToMeGlobalLighting: true
+      }
+    );
+
+    return true;
+  } finally {
+    cancelGlobalLightingTransition(scene);
+  }
+}
+
+export async function synchroniseExternalGlobalLightingChange(
+  scene,
+  changes = {},
+  options = {}
+) {
+  if (!scene || options.talkToMeGlobalLighting === true) {
+    return false;
+  }
+
+  const environmentChanges = changes.environment ?? {};
+  const changedLighting =
+    Object.hasOwn(environmentChanges, "darknessLevel")
+    || Object.hasOwn(environmentChanges, "globalLight")
+    || Object.hasOwn(changes, "environment.darknessLevel")
+    || Object.hasOwn(changes, "environment.globalLight.enabled")
+    || Object.hasOwn(changes, "environment.globalLight.bright")
+    || Object.hasOwn(changes, "environment.globalLight.color");
+
+  if (!changedLighting) return false;
+
+  // Foundry's built-in day/night and global-light controls are authoritative.
+  // Stop an active TalkToMe fade and treat the GM's new state as the baseline.
+  cancelGlobalLightingTransition(scene);
+
+  await scene.setFlag(
+    TTM_ID,
+    GLOBAL_LIGHT_STATE_FLAG,
+    getSceneGlobalLighting(scene)
+  );
+
+  return true;
+}
+
+export async function activateGlobalLightingTile(tileDoc) {
+  const scene = tileDoc?.parent ?? canvas.scene;
+  if (!scene) return false;
+
+  const flags = getUtilityFlags(tileDoc);
+  const action = flags.globalLightAction ?? "toggle";
+  const original = await ensureOriginalGlobalLighting(scene);
+  const current = getSceneGlobalLighting(scene);
+  const updates = {};
+
+  // Foundry's day/night controls animate the scene darkness level.
+  // Do not toggle globalLight.enabled here because that boolean snaps.
+  if (action === "restore") {
+    updates["environment.darknessLevel"] =
+      Number(original?.darknessLevel ?? 0);
+
+    if (original?.color !== undefined) {
+      updates["environment.globalLight.color"] =
+        original.color;
+    }
+  } else if (action === "on") {
+    updates["environment.darknessLevel"] = 0;
+  } else if (action === "off") {
+    updates["environment.darknessLevel"] = 1;
+  } else if (action === "toggle") {
+    updates["environment.darknessLevel"] =
+      current.darknessLevel >= 0.5 ? 0 : 1;
+  } else if (action === "set-darkness") {
+    updates["environment.darknessLevel"] = Math.max(
+      0,
+      Math.min(1, Number(flags.globalDarkness ?? 0.75))
+    );
+  }
+
+  if (flags.globalLightColorOverride === true) {
+    updates["environment.globalLight.color"] =
+      flags.globalLightColor || "#ffffff";
+  }
+
+  await updateSceneGlobalLighting(scene, updates);
+
+  const resultingDarkness = Number(
+    updates["environment.darknessLevel"]
+    ?? current.darknessLevel
+  );
+  const nextActive = resultingDarkness >= 0.5;
+
+  const tileUpdates = {
+    [`flags.${TTM_ID}.utility.active`]: nextActive
+  };
+
+  const nextImage = nextActive
+    ? flags.activeImage
+    : flags.inactiveImage ?? flags.defaultImage;
+
+  if (nextImage) {
+    tileUpdates["texture.src"] = nextImage;
+  }
+
+  await tileDoc.update(tileUpdates);
+
+  return true;
+}
+
+export async function restoreOriginalGlobalLighting(
+  scene = canvas.scene
+) {
+  if (!scene) return false;
+
+  const original = scene.getFlag(
+    TTM_ID,
+    GLOBAL_LIGHT_STATE_FLAG
+  );
+
+  if (!original) return false;
+
+  cancelGlobalLightingTransition(scene);
+
+  await scene.update(
+    {
+      "environment.darknessLevel":
+        Number(original.darknessLevel ?? 0),
+      "environment.globalLight.color":
+        original.color ?? null
+    },
+    {
+      animateDarkness: true,
+      talkToMeGlobalLighting: true
+    }
+  );
+
+  await scene.unsetFlag(TTM_ID, GLOBAL_LIGHT_STATE_FLAG);
+  return true;
+}
+
+// Cooldowns and single-use state
 const talkToMeActivationCooldowns = new Map();
 const talkToMeSingleUseActivations = new Set();
 
@@ -405,6 +611,9 @@ export async function activateUtilityTemplate(tileDoc, tokenLike = null, overrid
 
   if (utility.template === TTM_TEMPLATES.SWITCH) return toggleSwitchTile(tileDoc);
   if (utility.template === TTM_TEMPLATES.LIGHT) return toggleLightTile(tileDoc);
+  if (utility.template === TTM_TEMPLATES.GLOBAL_LIGHT) {
+    return activateGlobalLightingTile(tileDoc);
+  }
   if (utility.template === TTM_TEMPLATES.TRAP) return activateTrapTile(tileDoc, tokenLike);
   if (utility.template === TTM_TEMPLATES.TELEPORT) return teleportToken(tileDoc, tokenLike);
   if (utility.template === TTM_TEMPLATES.RESET) return activateResetTile(tileDoc);
@@ -551,6 +760,7 @@ export async function executeConfiguredTileProgram(
   return executed;
 }
 
+// Linked tile activation
 export async function triggerLinkedTalkToMeTile(api, tileDoc, tokenLike = null) {
   const flags = getUtilityFlags(tileDoc);
   const linkedId = flags.linkedTriggerTileId || flags.targetTileId;
@@ -694,6 +904,7 @@ export async function markTeleportTileActivated(tileDoc) {
 }
 
 
+// Utility action dispatcher
 export async function applyUtilityTemplateActions(api, tileDoc, tokenLike = null) {
   const flags = getUtilityFlags(tileDoc);
 
@@ -710,6 +921,11 @@ export async function applyUtilityTemplateActions(api, tileDoc, tokenLike = null
 
   if (flags.template === TTM_TEMPLATES.LIGHT) {
     await toggleLightTile(tileDoc);
+    return true;
+  }
+
+  if (flags.template === TTM_TEMPLATES.GLOBAL_LIGHT) {
+    await activateGlobalLightingTile(tileDoc);
     return true;
   }
 
@@ -986,6 +1202,11 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
     "lightColor",
     "lightAlpha",
     "lightAnimation",
+    "globalLightAction",
+    "globalDarkness",
+    "globalLightColorOverride",
+    "globalLightColor",
+    "globalLightUseFoundryFade",
     "teleportX",
     "teleportY",
     "teleportOffsetX",
@@ -1009,10 +1230,13 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
 }
 
 
+// Reset all managed tiles
 export async function resetAllTalkToMeTiles({
   sourceTileDoc = null,
   deferSourceReset = false
 } = {}) {
+  await restoreOriginalGlobalLighting(canvas.scene);
+
   const managedTiles = (canvas.scene?.tiles?.contents ?? []).filter(tileDoc => {
     const utility = tileDoc.getFlag(TTM_ID, "utility");
     return Boolean(utility?.template);

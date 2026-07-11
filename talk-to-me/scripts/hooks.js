@@ -1,8 +1,17 @@
+// =============================================================================
+// Hooks
+// =============================================================================
+// Registers Foundry hooks, socket handling, visibility refreshes, and scene lifecycle events.
+
 import { TTM_ID, TTM_SOCKET_ACTIONS } from "./constants.js";
 import { lightManager } from "./light-manager.js";
 import { migrateScene } from "./migration.js";
+import {
+  synchroniseExternalGlobalLightingChange
+} from "./utilities.js";
 
 
+// Visibility refresh state
 let talkToMeVisibilityRefreshPending = false;
 
 function scheduleTalkToMeTileVisibilityRefresh() {
@@ -115,7 +124,8 @@ Hooks.on("drawTile", tile => {
   );
 });
 
-  Hooks.on("canvasReady", async () => {
+  // Scene ready handling
+Hooks.on("canvasReady", async () => {
     const activeGM = game.users?.activeGM;
     const isMigrationGM =
       game.user?.isGM
@@ -226,3 +236,19 @@ export function registerSocket() {
     if (data.action === "hardTeleport") return game.talkToMe?.handleHardTeleportRequest?.(data);
   });
 }
+
+
+Hooks.on("updateScene", async (scene, changes, options) => {
+  try {
+    await synchroniseExternalGlobalLightingChange(
+      scene,
+      changes,
+      options
+    );
+  } catch (error) {
+    console.error(
+      "TalkToMe failed to synchronise Foundry lighting controls.",
+      error
+    );
+  }
+});

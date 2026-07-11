@@ -1,7 +1,13 @@
+// =============================================================================
+// Activation Manager
+// =============================================================================
+// Handles player clicks, double-clicks, visibility checks, and tile activation routing.
+
 import { TTM_ID, TTM_SOCKET_ACTIONS } from "./constants.js";
 import { placementManager } from "./placement-manager.js";
 import { applyUtilityTemplateActions } from "./utilities.js";
 
+// Tile click handling
 class ActivationManager {
   constructor(api) {
     this.api = api;
@@ -90,6 +96,7 @@ class ActivationManager {
       && point.y <= bounds.bottom;
   }
 
+  // Tile eligibility
   isClickable(tileDoc) {
     const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
     const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
@@ -410,6 +417,7 @@ editableTilesAt(point) {
     });
   }
 
+  // Run tile action
   async execute(tileDoc, token = null) {
     const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
     const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
