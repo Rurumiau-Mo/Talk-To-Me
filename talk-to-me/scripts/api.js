@@ -28,6 +28,11 @@ import {
 import { generateOpenMacro, generateScript } from "./macros.js";
 import { ActivationManager } from "./activation-manager.js";
 import { lightManager } from "./light-manager.js";
+import {
+  migrateWorld,
+  migrateScene,
+  buildTileMigration
+} from "./migration.js";
 
 import {
   TTM_ACTION_TRIGGERS,
@@ -299,6 +304,40 @@ debugLightMattFlags() {
   console.log("TalkToMe Light MATT flags", tiles);
   ui.notifications.info(`TalkToMe found ${tiles.length} Light tile${tiles.length === 1 ? "" : "s"}.`);
   return tiles;
+}
+
+
+async migrateWorldData(options = {}) {
+  return migrateWorld({
+    dryRun: options.dryRun === true,
+    notify: options.notify !== false,
+    force: options.force === true
+  });
+}
+
+async migrateCurrentScene(options = {}) {
+  if (!game.user?.isGM || !canvas?.scene) return null;
+
+  const report = await migrateScene(canvas.scene, {
+    dryRun: options.dryRun === true
+  });
+
+  if (options.notify !== false) {
+    ui.notifications.info(
+      options.dryRun === true
+        ? `TalkToMe migration preview found `
+          + `${report.migrated} tile(s) on this scene.`
+        : `TalkToMe migrated ${report.migrated} tile(s) `
+          + `on ${canvas.scene.name}.`
+    );
+  }
+
+  return report;
+}
+
+previewTileMigration(tileId) {
+  const tileDoc = canvas.scene?.tiles?.get(tileId);
+  return tileDoc ? buildTileMigration(tileDoc) : null;
 }
 
   async triggerSpeechTile(tileId, tokenLike = null, overrides = {}) {

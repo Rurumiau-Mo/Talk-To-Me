@@ -22,6 +22,16 @@ function safeRegisterMenu(key, data) {
 
 export function registerSettings() {
 
+
+safeRegisterSetting("worldDataVersion", {
+  name: "TalkToMe World Data Version",
+  hint: "Internal schema version used for automatic TalkToMe tile migration.",
+  scope: "world",
+  config: false,
+  type: Number,
+  default: 0
+});
+
   safeRegisterSetting("defaultTable", {
     name: "Default RollTable",
     hint: "The RollTable TalkToMe will use by default.",
@@ -30,6 +40,16 @@ export function registerSettings() {
     type: String,
     default: ""
   });
+
+
+safeRegisterSetting("useTalkToMeTileEditor", {
+  name: "Use TalkToMe Editor for Tile Editing",
+  hint: "When enabled, TalkToMe managed-list Edit buttons and GM double-left-clicks on TalkToMe tiles open the TalkToMe tile editor instead of Foundry's standard Tile sheet.",
+  scope: "world",
+  config: true,
+  type: Boolean,
+  default: true
+});
 
   safeRegisterSetting("postChatByDefault", {
     name: "Post to Chat by Default",

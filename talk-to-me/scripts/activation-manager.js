@@ -331,6 +331,22 @@ refreshTileVisibility() {
     return now - previous < this.cooldownMs;
   }
 
+
+editableTilesAt(point) {
+  return (canvas.scene?.tiles?.contents ?? [])
+    .filter(tileDoc => {
+      const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
+      const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
+      const isTalkToMeTile =
+        Boolean(utility.template)
+        || speech.managed === true;
+
+      return isTalkToMeTile
+        && this.pointInTileImage(tileDoc, point);
+    })
+    .sort((a, b) => Number(b.sort ?? 0) - Number(a.sort ?? 0));
+}
+
   tilesAt(point) {
     return (canvas.scene?.tiles?.contents ?? [])
       .filter(tileDoc =>
@@ -346,6 +362,23 @@ refreshTileVisibility() {
     if (!canvas?.scene) return;
     const point = this.worldPoint(event);
     if (!point) return;
+
+    if (
+      clickType === "double-left"
+      && game.user?.isGM
+      && game.settings.get(TTM_ID, "useTalkToMeTileEditor")
+    ) {
+      const editableTile = this.editableTilesAt(point)[0];
+
+      if (editableTile) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        event.stopImmediatePropagation?.();
+
+        game.talkToMe?.app?.openTileEditor?.(editableTile.id);
+        return;
+      }
+    }
 
     const tileDoc = this.tilesAt(point)[0];
     if (!tileDoc || !placementManager.isReady(tileDoc)) return;

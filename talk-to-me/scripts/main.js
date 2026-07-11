@@ -101,6 +101,20 @@ Hooks.once("ready", async () => {
   try {
     createFallbackButton();
     await installFullApi();
+
+    try {
+      const migration = await import("./migration.js");
+      await migration.runAutomaticMigration?.();
+    } catch (migrationError) {
+      console.error(
+        `${TTM_TITLE} automatic migration failed.`,
+        migrationError
+      );
+      ui.notifications.warn(
+        "TalkToMe loaded, but automatic data migration failed. "
+        + "Use the Tile Manager migration tools to retry."
+      );
+    }
   } catch (err) {
     console.error(`${TTM_TITLE} failed to initialise.`, err);
     ui.notifications.error("TalkToMe failed to initialise. Check the console for details.");

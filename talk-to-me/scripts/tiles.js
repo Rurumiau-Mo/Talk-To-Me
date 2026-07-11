@@ -1,4 +1,9 @@
-import { TTM_ID, TTM_MATT_ID, TTM_TAGGER_ID } from "./constants.js";
+import {
+  TTM_ID,
+  TTM_MATT_ID,
+  TTM_TAGGER_ID,
+  TTM_TILE_SCHEMA_VERSION
+} from "./constants.js";
 
 import {
   ttmCurrentPlacementPosition,
@@ -432,6 +437,7 @@ export async function createSpeechTile({
 
   const flags = {
     [TTM_ID]: {
+      dataVersion: TTM_TILE_SCHEMA_VERSION,
       utility: placementManager.addPlacementFlags({
         template,
         trigger,
