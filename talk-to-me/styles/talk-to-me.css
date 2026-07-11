@@ -544,3 +544,108 @@
 #talk-to-me-tile-manager-window .notes {
   color: #c7c7b8;
 }
+
+
+#talk-to-me-conversation-window {
+  position: fixed;
+  z-index: 1110;
+  width: 580px;
+  max-width: calc(100vw - 32px);
+  max-height: 84vh;
+  background: #1f1f1f;
+  color: #f0f0e0;
+  border: 1px solid #000;
+  border-radius: 6px;
+  box-shadow: 0 0 18px #000;
+  overflow: hidden;
+}
+
+#talk-to-me-conversation-window .ttm-header {
+  cursor: move;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(0, 0, 0, 0.55);
+  border-bottom: 1px solid #000;
+}
+
+#talk-to-me-conversation-window .ttm-title {
+  margin: 0;
+  flex: 1;
+}
+
+#talk-to-me-conversation-window .ttm-header-button {
+  width: 28px;
+  height: 28px;
+  line-height: 1;
+}
+
+#talk-to-me-conversation-window .ttm-body {
+  padding: 0.75rem;
+  overflow-y: auto;
+  max-height: calc(84vh - 38px);
+  background: rgba(20, 20, 20, 0.98);
+}
+
+#talk-to-me-conversation-window .form-group {
+  margin-bottom: 0.55rem;
+}
+
+#talk-to-me-conversation-window label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+#talk-to-me-conversation-window input[type="text"],
+#talk-to-me-conversation-window input[type="number"],
+#talk-to-me-conversation-window select,
+#talk-to-me-conversation-window textarea {
+  width: 100%;
+}
+
+#talk-to-me-conversation-window label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: normal;
+  margin: 0.4rem 0;
+}
+
+#talk-to-me-conversation-window .ttm-conversation-participant {
+  padding: 0.65rem;
+  margin: 0.65rem 0;
+  border: 1px solid #000;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#talk-to-me-conversation-window .ttm-conversation-participant h3 {
+  margin: 0 0 0.45rem;
+}
+
+#talk-to-me-conversation-window .ttm-primary {
+  width: 100%;
+  margin-top: 0.75rem;
+  font-weight: bold;
+}
+
+
+#talk-to-me-tile-editor-window .ttm-conversation-participant {
+  padding: 0.65rem;
+  margin: 0.65rem 0;
+  border: 1px solid #000;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#talk-to-me-tile-editor-window .ttm-conversation-participant h4 {
+  margin: 0 0 0.45rem;
+}
+
+#talk-to-me-tile-editor-window .ttm-editor-conversation-sequence,
+#talk-to-me-tile-editor-window .ttm-editor-advanced-conversation {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}

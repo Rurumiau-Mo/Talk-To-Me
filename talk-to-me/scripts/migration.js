@@ -305,6 +305,95 @@ function migrateToVersion2(tileDoc, data) {
   return data;
 }
 
+function migrateToVersion3(tileDoc, data) {
+  const speech = clone(data.speech);
+
+  data.speech = foundry.utils.mergeObject(
+    speech,
+    {
+      conversationEnabled: booleanOr(
+        speech.conversationEnabled,
+        false
+      ),
+      conversationId: speech.conversationId ?? "",
+      conversationStart: booleanOr(
+        speech.conversationStart,
+        false
+      ),
+      conversationStartNode:
+        speech.conversationStartNode
+        ?? "start",
+      conversationNextTileId:
+        speech.conversationNextTileId
+        ?? ""
+    },
+    { inplace: false }
+  );
+
+  data.version = 3;
+  return data;
+}
+
+function migrateToVersion4(tileDoc, data) {
+  const speech = clone(data.speech);
+
+  data.speech = foundry.utils.mergeObject(
+    speech,
+    {
+      conversationSequenceEnabled: booleanOr(
+        speech.conversationSequenceEnabled,
+        false
+      ),
+      conversationParticipants: Array.isArray(
+        speech.conversationParticipants
+      )
+        ? speech.conversationParticipants.slice(0, 5)
+        : [],
+      conversationOrder: Array.isArray(
+        speech.conversationOrder
+      )
+        ? speech.conversationOrder
+        : [],
+      conversationLineDelay: Math.max(
+        0.25,
+        numberOr(speech.conversationLineDelay, 3)
+      )
+    },
+    { inplace: false }
+  );
+
+  data.version = 4;
+  return data;
+}
+
+function migrateToVersion5(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      multipleUse: booleanOr(utility.multipleUse, true),
+      usedOnce: booleanOr(utility.usedOnce, false)
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      multipleUse: booleanOr(
+        data.utility.originalState?.multipleUse
+          ?? utility.multipleUse,
+        true
+      )
+    },
+    { inplace: false }
+  );
+
+  data.version = 5;
+  return data;
+}
+
 function isTalkToMeTile(tileDoc) {
   const root = tileDoc.flags?.[TTM_ID] ?? {};
   const utility = root.utility ?? {};
@@ -340,6 +429,9 @@ export function buildTileMigration(tileDoc) {
 
   if (data.version < 1) data = migrateToVersion1(tileDoc, data);
   if (data.version < 2) data = migrateToVersion2(tileDoc, data);
+  if (data.version < 3) data = migrateToVersion3(tileDoc, data);
+  if (data.version < 4) data = migrateToVersion4(tileDoc, data);
+  if (data.version < 5) data = migrateToVersion5(tileDoc, data);
 
   return {
     _id: tileDoc.id,

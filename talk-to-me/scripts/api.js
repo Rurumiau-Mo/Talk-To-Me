@@ -33,6 +33,10 @@ import {
   migrateScene,
   buildTileMigration
 } from "./migration.js";
+import {
+  resetConversation,
+  getConversationState
+} from "./conversation.js";
 
 import {
   TTM_ACTION_TRIGGERS,
@@ -306,6 +310,14 @@ debugLightMattFlags() {
   return tiles;
 }
 
+
+async resetConversation(conversationId = "") {
+  return resetConversation(conversationId, canvas.scene);
+}
+
+getConversationState(conversationId) {
+  return getConversationState(conversationId, canvas.scene);
+}
 
 async migrateWorldData(options = {}) {
   return migrateWorld({

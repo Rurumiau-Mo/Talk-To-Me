@@ -29,6 +29,44 @@ export const TTM_TEMPLATES = {
 
 
 const talkToMeActivationCooldowns = new Map();
+const talkToMeSingleUseActivations = new Set();
+
+function singleUseKey(tileDoc) {
+  return `${canvas.scene?.id ?? "scene"}.${tileDoc?.id ?? "tile"}`;
+}
+
+export function clearTileSingleUseState(tileDoc = null) {
+  if (!tileDoc) {
+    talkToMeSingleUseActivations.clear();
+    return;
+  }
+
+  talkToMeSingleUseActivations.delete(singleUseKey(tileDoc));
+}
+
+function isSingleUseTileSpent(tileDoc, flags) {
+  if (flags.multipleUse !== false) return false;
+
+  return (
+    flags.usedOnce === true
+    || talkToMeSingleUseActivations.has(singleUseKey(tileDoc))
+  );
+}
+
+function commitSingleUseActivation(tileDoc, flags) {
+  if (flags.multipleUse !== false) return;
+
+  const key = singleUseKey(tileDoc);
+  talkToMeSingleUseActivations.add(key);
+
+  if (flags.usedOnce !== true) {
+    tileDoc.update({
+      [`flags.${TTM_ID}.utility.usedOnce`]: true
+    }).catch(error => {
+      console.error("TalkToMe failed to save single-use state.", error);
+    });
+  }
+}
 
 function activationCooldownKey(tileDoc) {
   return `${canvas.scene?.id ?? "scene"}.${tileDoc?.id ?? "tile"}`;
@@ -98,8 +136,19 @@ export function canActivateTileNow(tileDoc, {
 
   const flags = getUtilityFlags(tileDoc);
 
+  if (isSingleUseTileSpent(tileDoc, flags)) {
+    if (notify) {
+      ui.notifications.warn(
+        `${tileDoc.name ?? "This tile"} has already been used.`
+      );
+    }
+    return false;
+  }
+
   if (flags.activationCooldownEnabled !== true) {
     clearTileActivationCooldowns(tileDoc);
+
+    if (commit) commitSingleUseActivation(tileDoc, flags);
     return true;
   }
 
@@ -118,7 +167,11 @@ export function canActivateTileNow(tileDoc, {
     return false;
   }
 
-  if (commit) startTileActivationCooldown(tileDoc);
+  if (commit) {
+    startTileActivationCooldown(tileDoc);
+    commitSingleUseActivation(tileDoc, flags);
+  }
+
   return true;
 }
 
@@ -127,8 +180,11 @@ async function clearMissingLightState(tileDoc, flags) {
   const updates = {
     [`flags.${TTM_ID}.utility.active`]: false,
     [`flags.${TTM_ID}.utility.lightOn`]: false,
-    [`flags.${TTM_ID}.utility.ambientLightId`]: ""
+    [`flags.${TTM_ID}.utility.ambientLightId`]: "",
+    [`flags.${TTM_ID}.utility.usedOnce`]: false
   };
+
+  clearTileSingleUseState(currentTile);
 
   if (flags.inactiveImage) {
     updates["texture.src"] = flags.inactiveImage;
@@ -940,7 +996,8 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
     "requirePlayerVision",
     "hideBehindWalls",
     "activationCooldownEnabled",
-    "activationCooldownSeconds"
+    "activationCooldownSeconds",
+    "multipleUse"
   ]) {
     if (Object.hasOwn(original, key)) {
       updates[`flags.${TTM_ID}.utility.${key}`] = original[key];
@@ -972,6 +1029,7 @@ export async function resetAllTalkToMeTiles({
 
   game.talkToMeTeleportCooldowns?.clear?.();
   clearTileActivationCooldowns();
+  clearTileSingleUseState();
   game.talkToMe?.entryCooldown?.clear?.();
   game.talkToMe?.resetEntryHistory?.();
   game.talkToMe?.refreshClickableTileOverlay?.();

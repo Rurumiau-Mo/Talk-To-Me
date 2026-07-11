@@ -16,6 +16,10 @@ import {
 
 import { generateLeftClickTileMacroScript, generateMattPresetScript, generateTileTriggerScript } from "./macros.js";
 import { resolveToken } from "./speech.js";
+import {
+  resolveConversationLine,
+  playConversationSequence
+} from "./conversation.js";
 import { placementManager } from "./placement-manager.js";
 import { lightManager } from "./light-manager.js";
 import {
@@ -360,6 +364,7 @@ export async function createSpeechTile({
   hideBehindWalls = true,
   activationCooldownEnabled = false,
   activationCooldownSeconds = 1,
+  multipleUse = true,
   width = 200,
   height = 200,
   clickActivation = "left",
@@ -394,7 +399,16 @@ export async function createSpeechTile({
   teleportAvoidTiles = true,
   hotspotSize = 64,
   hotspotOffsetX = 0,
-  hotspotOffsetY = 0
+  hotspotOffsetY = 0,
+  conversationEnabled = false,
+  conversationId = "",
+  conversationStart = false,
+  conversationStartNode = "start",
+  conversationNextTileId = "",
+  conversationSequenceEnabled = false,
+  conversationParticipants = [],
+  conversationOrder = [],
+  conversationLineDelay = 3
 } = {}) {
   if (!ttmIsGM()) {
     ttmNotice("warn", "Only the GM can create speech tiles.");
@@ -408,7 +422,9 @@ export async function createSpeechTile({
 
   const table = tableId ? game.tables.get(tableId) : null;
 
-  const requiresSpeechSource = template === "speech";
+  const requiresSpeechSource =
+    template === "speech"
+    && conversationSequenceEnabled !== true;
 
   if (requiresSpeechSource && mode === "table" && !table) {
     ttmNotice("warn", "Choose a RollTable for the Speech Bubble template.");
@@ -480,6 +496,8 @@ export async function createSpeechTile({
           0.2,
           Number(activationCooldownSeconds || 1)
         ),
+        multipleUse,
+        usedOnce: false,
         originalState: {
           active: false,
           image: inactiveImage || textureSrc,
@@ -506,7 +524,8 @@ export async function createSpeechTile({
           activationCooldownSeconds: Math.max(
             0.2,
             Number(activationCooldownSeconds || 1)
-          )
+          ),
+          multipleUse
         }
       }),
       speech: {
@@ -527,7 +546,16 @@ export async function createSpeechTile({
         clickActivation,
         tileImage: textureSrc,
         mattTrigger: mattTriggerModeForTalkToMe(trigger, clickActivation),
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        conversationEnabled,
+        conversationId,
+        conversationStart,
+        conversationStartNode,
+        conversationNextTileId,
+        conversationSequenceEnabled,
+        conversationParticipants,
+        conversationOrder,
+        conversationLineDelay
       }
     }
   };
@@ -635,6 +663,15 @@ export async function triggerSpeechTile(api, tileId, tokenLike = null, overrides
   const flags = doc.getFlag(TTM_ID, "speech");
   if (!flags) return ttmNotice("warn", "That tile is not a TalkToMe speech tile.");
 
+  if (flags.conversationSequenceEnabled === true) {
+    return playConversationSequence(
+      api,
+      doc,
+      flags,
+      resolveToken(tokenLike)
+    );
+  }
+
   const table = flags.tableId ? game.tables.get(flags.tableId) : null;
   const customText = flags.mode === "custom" ? String(flags.text ?? "").trim() : "";
   const hasSpeechSource = Boolean(table || customText);
@@ -644,10 +681,17 @@ export async function triggerSpeechTile(api, tileId, tokenLike = null, overrides
   const subjectToken = flags.subjectTokenId ? ttmTokenById(flags.subjectTokenId) : null;
   const token = subjectToken ?? resolveToken(tokenLike);
 
+  let conversationText = "";
+  if (flags.conversationEnabled === true && table) {
+    const line = await resolveConversationLine(doc, table, flags);
+    if (line?.blocked) return false;
+    conversationText = String(line?.text ?? "").trim();
+  }
+
   await api.say({
     token,
-    tableId: table?.id ?? "",
-    text: customText,
+    tableId: conversationText ? "" : (table?.id ?? ""),
+    text: conversationText || customText,
     npcName: flags.npcName,
     postChat: overrides.postChat ?? flags.postChat,
     zoomToSpeaker: overrides.zoomToSpeaker ?? flags.zoomToSpeaker
