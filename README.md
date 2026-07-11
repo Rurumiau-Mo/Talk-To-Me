@@ -1,25 +1,28 @@
 # Talk-To-Me
-A Foundry VTT Module to allow the DM to trigger (manually and with tiles) chat bubbles.
+A Foundry VTT Module to allow the DM to trigger (manually and with tiles) chat bubbles. For D&D5E.
 
 Talk To Me is a utility module for Foundry Virtual Tabletop v14 that allows Game Masters to create immersive NPC dialogue using speech bubbles, RollTables, and trigger tiles.
 
-Designed to work alongside Monk's Active Tile Triggers, Talk To Me makes it easy to create NPC interactions without writing JavaScript.
+Working alongside Monk's Active Tile Triggers and Tagger, Talk To Me allows GM's to trigger on screen dialogue with tiles and pan to speakers to allow you to manage important hooks and plot points. 
 
-Features
 
-💬 Display speech bubbles above NPCs
+Features:
 
-🎲 Pull dialogue directly from RollTables
+Display speech bubbles above NPCs
 
-🗺️ Create trigger tiles that automatically play NPC dialogue
+Pull dialogue directly from RollTables
 
-🎭 Select any token on the current scene as the speaker
+Create trigger tiles that automatically play NPC dialogue
 
-🔍 Optional camera pan/zoom to the speaking NPC
+Select any token on the current scene as the speaker
 
-💻 Generate macros for quick access
+Optional camera pan/zoom to the speaking NPC
 
-🎨 Native Foundry VTT v14 interface
+Generate macros for quick access
+
+Tiles for: Lighting, Global Lighting, Traps, Teleport, and Tile Reset
+
+Native Foundry VTT v14 interface
 
 ### Requirements
 Foundry Virtual Tabletop Version 14
@@ -27,6 +30,8 @@ Foundry Virtual Tabletop Version 14
 Monk's Active Tile Triggers
 
 Tagger
+
+D&D5E
 
 ## Module Page
 
@@ -66,6 +71,7 @@ Conversation chains
 
 Compatibility
 
+Node based tile creation system??????? 
 
 ##### This project is licensed under the Mozilla Public License 2.0 (MPL-2.0).
 
@@ -76,4 +82,4 @@ Created by Rururmiau-mo (Rurumiau)
 AI-assisted development using ChatGPT (OpenAI). All code has been reviewed, tested, modified, and is maintained by the author.
 
 # Personal Note
-This was made in spare time a little personal project that I've made public, please be nice :) If you love the module and it works for you please let me know! or buy me a Ko-fi to say thanks :D - [ko-fi.com/rurumiau](https://ko-fi.com/rurumiau)
+This was made in spare time a little personal project that I've made public, please be nice :) If you love the module and it works for you please let me know! (Or if you break it!) or buy me a Ko-fi to say thanks :D - [ko-fi.com/rurumiau](https://ko-fi.com/rurumiau)
