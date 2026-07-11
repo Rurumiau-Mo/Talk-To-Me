@@ -1257,8 +1257,50 @@ openTileManager() {
     this.switchTab("tiles");
   });
 
+  const previewMigration = ttmMake(
+    "button",
+    "Preview Migration"
+  );
+  previewMigration.type = "button";
+  previewMigration.addEventListener("click", async () => {
+    const report = await this.api.migrateWorldData({
+      dryRun: true,
+      notify: true,
+      force: true
+    });
+
+    if (report) {
+      console.log("TalkToMe migration preview", report);
+    }
+  });
+
+  const runMigration = ttmMake("button", "Run Migration");
+  runMigration.type = "button";
+  runMigration.addEventListener("click", async () => {
+    const confirmed = await Dialog.confirm({
+      title: "Run TalkToMe Data Migration?",
+      content:
+        "<p>This upgrades older TalkToMe tile flags across every scene. "
+        + "Unknown flag data is preserved.</p>"
+    });
+
+    if (!confirmed) return;
+
+    const report = await this.api.migrateWorldData({
+      dryRun: false,
+      notify: true,
+      force: true
+    });
+
+    if (report) {
+      this.refreshTileManagerList();
+    }
+  });
+
   ttmAdd(toolbar, refresh);
   ttmAdd(toolbar, createNew);
+  ttmAdd(toolbar, previewMigration);
+  ttmAdd(toolbar, runMigration);
 
   const list = ttmMake("div", null, "ttm-managed-list");
   list.id = "ttm-popout-managed-tiles";

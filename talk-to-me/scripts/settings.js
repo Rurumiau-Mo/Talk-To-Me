@@ -22,6 +22,16 @@ function safeRegisterMenu(key, data) {
 
 export function registerSettings() {
 
+
+safeRegisterSetting("worldDataVersion", {
+  name: "TalkToMe World Data Version",
+  hint: "Internal schema version used for automatic TalkToMe tile migration.",
+  scope: "world",
+  config: false,
+  type: Number,
+  default: 0
+});
+
   safeRegisterSetting("defaultTable", {
     name: "Default RollTable",
     hint: "The RollTable TalkToMe will use by default.",

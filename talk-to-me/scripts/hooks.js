@@ -1,5 +1,6 @@
 import { TTM_ID, TTM_SOCKET_ACTIONS } from "./constants.js";
 import { lightManager } from "./light-manager.js";
+import { migrateScene } from "./migration.js";
 
 
 let talkToMeVisibilityRefreshPending = false;
@@ -115,6 +116,22 @@ Hooks.on("drawTile", tile => {
 });
 
   Hooks.on("canvasReady", async () => {
+    const activeGM = game.users?.activeGM;
+    const isMigrationGM =
+      game.user?.isGM
+      && (!activeGM || activeGM.id === game.user.id);
+
+    if (isMigrationGM && canvas.scene) {
+      try {
+        await migrateScene(canvas.scene, { dryRun: false });
+      } catch (error) {
+        console.error(
+          "TalkToMe scene migration failed.",
+          error
+        );
+      }
+    }
+
     window.setTimeout(createFloatingButton, 100);
     game.talkToMe?.resetEntryHistory?.();
     game.talkToMe?.startTriggerScanner?.();
