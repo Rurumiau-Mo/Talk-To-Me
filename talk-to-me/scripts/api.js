@@ -8,7 +8,11 @@ import { TalkToMeApp } from "./app.js";
 import { TalkToMeBubbleManager } from "./bubbles.js";
 
 import { ttmIsGM, ttmModuleActive, ttmNotice } from "./helpers.js";
-import { activateUtilityTemplate, applyUtilityTemplateActions, runTeleportUtility, toggleLightTile } from "./utilities.js";
+import { activateUtilityTemplate, applyUtilityTemplateActions,
+  canActivateTileNow,
+  runTeleportUtility,
+  toggleLightTile
+} from "./utilities.js";
 
 import {
   broadcastSpeech,
@@ -266,8 +270,20 @@ async toggleLightTileById(tileId, userId = game.user?.id, tokenId = null) {
     return false;
   }
 
-  await toggleLightTile(tileDoc);
-  return true;
+  if (!canActivateTileNow(tileDoc, {
+    commit: true,
+    notify: game.user?.id === userId
+  })) {
+    return false;
+  }
+
+  const result = await toggleLightTile(tileDoc);
+  console.log("TalkToMe Light API activation", {
+    tileId: tileDoc.id,
+    tileName: tileDoc.name,
+    active: result
+  });
+  return result !== false;
 }
 
 debugLightMattFlags() {

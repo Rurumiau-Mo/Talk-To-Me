@@ -26,6 +26,103 @@ export const TTM_TEMPLATES = {
 
 
 
+
+
+const talkToMeActivationCooldowns = new Map();
+
+function activationCooldownKey(tileDoc) {
+  return `${canvas.scene?.id ?? "scene"}.${tileDoc?.id ?? "tile"}`;
+}
+
+function activationCooldownDurationMs(tileDoc) {
+  const flags = getUtilityFlags(tileDoc);
+  const seconds = Math.max(
+    0.2,
+    Number(flags.activationCooldownSeconds ?? 1)
+  );
+
+  return Math.round(seconds * 1000);
+}
+
+export function clearTileActivationCooldowns(tileDoc = null) {
+  if (!tileDoc) {
+    talkToMeActivationCooldowns.clear();
+    return;
+  }
+
+  talkToMeActivationCooldowns.delete(activationCooldownKey(tileDoc));
+}
+
+export function getTileActivationCooldownRemaining(tileDoc) {
+  if (!tileDoc) return 0;
+
+  const flags = getUtilityFlags(tileDoc);
+  if (flags.activationCooldownEnabled !== true) return 0;
+
+  const key = activationCooldownKey(tileDoc);
+  const expiresAt = Number(talkToMeActivationCooldowns.get(key) ?? 0);
+  const remainingMs = Math.max(0, expiresAt - Date.now());
+
+  if (remainingMs <= 0 && expiresAt > 0) {
+    talkToMeActivationCooldowns.delete(key);
+  }
+
+  return remainingMs;
+}
+
+export function startTileActivationCooldown(tileDoc) {
+  if (!tileDoc) return 0;
+
+  const flags = getUtilityFlags(tileDoc);
+  if (flags.activationCooldownEnabled !== true) {
+    clearTileActivationCooldowns(tileDoc);
+    return 0;
+  }
+
+  const durationMs = activationCooldownDurationMs(tileDoc);
+  const expiresAt = Date.now() + durationMs;
+
+  talkToMeActivationCooldowns.set(
+    activationCooldownKey(tileDoc),
+    expiresAt
+  );
+
+  return expiresAt;
+}
+
+export function canActivateTileNow(tileDoc, {
+  commit = true,
+  notify = false
+} = {}) {
+  if (!tileDoc) return false;
+
+  const flags = getUtilityFlags(tileDoc);
+
+  if (flags.activationCooldownEnabled !== true) {
+    clearTileActivationCooldowns(tileDoc);
+    return true;
+  }
+
+  const remainingMs = getTileActivationCooldownRemaining(tileDoc);
+
+  if (remainingMs > 0) {
+    if (notify) {
+      const remainingSeconds = Math.ceil(remainingMs / 100) / 10;
+
+      ui.notifications.warn(
+        `${tileDoc.name ?? "This tile"} is on cooldown for `
+        + `${remainingSeconds}s.`
+      );
+    }
+
+    return false;
+  }
+
+  if (commit) startTileActivationCooldown(tileDoc);
+  return true;
+}
+
+
 async function clearMissingLightState(tileDoc, flags) {
   const updates = {
     [`flags.${TTM_ID}.utility.active`]: false,
@@ -246,6 +343,10 @@ export async function activateUtilityTemplate(tileDoc, tokenLike = null, overrid
     return false;
   }
 
+  if (!canActivateTileNow(tileDoc, { commit: true, notify: game.user?.isGM })) {
+    return false;
+  }
+
   if (utility.template === TTM_TEMPLATES.SWITCH) return toggleSwitchTile(tileDoc);
   if (utility.template === TTM_TEMPLATES.LIGHT) return toggleLightTile(tileDoc);
   if (utility.template === TTM_TEMPLATES.TRAP) return activateTrapTile(tileDoc, tokenLike);
@@ -419,14 +520,21 @@ export async function triggerLinkedTalkToMeTile(api, tileDoc, tokenLike = null) 
   let utilityExecuted = false;
   let speechExecuted = false;
 
-  // Utility tiles must run directly. Routing them through the speech wrapper
-  // can return early when the linked tile has no speech source.
+  // Utility tiles commit their cooldown inside the central dispatcher.
+  // Speech/macro-only tiles commit it here before any program executes.
   if (linkedUtility?.template && linkedUtility.template !== TTM_TEMPLATES.SPEECH) {
     utilityExecuted = await applyUtilityTemplateActions(
       api,
       linkedTile,
       tokenLike
     ) !== false;
+
+    if (!utilityExecuted) return false;
+  } else if (!canActivateTileNow(linkedTile, {
+    commit: true,
+    notify: game.user?.isGM
+  })) {
+    return false;
   }
 
   // Speech-only linked tiles still use the normal speech route.
@@ -442,7 +550,8 @@ export async function triggerLinkedTalkToMeTile(api, tileDoc, tokenLike = null) 
         zoomToSpeaker: false,
         linkedActivation: true,
         sourceTileId: tileDoc.id,
-        skipUtilityAction: utilityExecuted
+        skipUtilityAction: utilityExecuted,
+        skipCooldownCheck: !utilityExecuted
       }
     );
 
@@ -533,6 +642,9 @@ export async function applyUtilityTemplateActions(api, tileDoc, tokenLike = null
   const flags = getUtilityFlags(tileDoc);
 
   if (!flags?.template) return false;
+  if (!canActivateTileNow(tileDoc, { commit: true, notify: game.user?.isGM })) {
+    return false;
+  }
 
   if (flags.template === TTM_TEMPLATES.SWITCH) {
     await toggleSwitchTile(tileDoc);
@@ -826,7 +938,9 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
     "teleportUseCooldown",
     "teleportCooldownSeconds",
     "requirePlayerVision",
-    "hideBehindWalls"
+    "hideBehindWalls",
+    "activationCooldownEnabled",
+    "activationCooldownSeconds"
   ]) {
     if (Object.hasOwn(original, key)) {
       updates[`flags.${TTM_ID}.utility.${key}`] = original[key];
@@ -857,6 +971,7 @@ export async function resetAllTalkToMeTiles({
   }
 
   game.talkToMeTeleportCooldowns?.clear?.();
+  clearTileActivationCooldowns();
   game.talkToMe?.entryCooldown?.clear?.();
   game.talkToMe?.resetEntryHistory?.();
   game.talkToMe?.refreshClickableTileOverlay?.();
@@ -899,6 +1014,14 @@ export async function activateResetTile(tileDoc) {
   const refreshedSource = canvas.scene?.tiles?.get(currentTile.id);
   if (refreshedSource) {
     await resetTalkToMeTileToOriginalState(refreshedSource);
+
+    const refreshedFlags = getUtilityFlags(refreshedSource);
+    if (refreshedFlags.activationCooldownEnabled === true) {
+      canActivateTileNow(refreshedSource, {
+        commit: true,
+        notify: false
+      });
+    }
   }
 
   return resetResult.count > 0;

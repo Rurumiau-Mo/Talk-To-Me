@@ -1,6 +1,6 @@
 import { TTM_ID, TTM_SOCKET_ACTIONS } from "./constants.js";
 import { placementManager } from "./placement-manager.js";
-import { lightManager } from "./light-manager.js";
+import { applyUtilityTemplateActions } from "./utilities.js";
 
 class ActivationManager {
   constructor(api) {
@@ -381,23 +381,10 @@ refreshTileVisibility() {
     const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
     const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
 
-    // Light clicks use the dedicated LightManager route.
-    // This avoids the generic speech/macro pipeline interfering with toggling.
-    if (utility.template === "light") {
-      const result = await lightManager.toggle(tileDoc);
-
-      console.log("TalkToMe Light click activation", {
-        tileId: tileDoc.id,
-        tileName: tileDoc.name,
-        active: result
-      });
-
-      return result;
-    }
-
-    if (utility.template === "reset") {
-      const { activateResetTile } = await import("./utilities.js");
-      return activateResetTile(tileDoc);
+    // Utility clicks use one dispatcher. It owns the cooldown check and
+    // performs the configured Light, Reset, Switch, Trap, or Teleport action.
+    if (utility.template && utility.template !== "speech") {
+      return applyUtilityTemplateActions(this.api, tileDoc, token);
     }
 
     return this.api.triggerSpeechTile(tileDoc.id, token, {

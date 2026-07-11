@@ -13,6 +13,11 @@ import { generateLeftClickTileMacroScript, generateMattPresetScript, generateTil
 import { resolveToken } from "./speech.js";
 import { placementManager } from "./placement-manager.js";
 import { lightManager } from "./light-manager.js";
+import {
+  applyUtilityTemplateActions,
+  canActivateTileNow,
+  runTeleportUtility
+} from "./utilities.js";
 
 export const TTM_MOVEMENT_TRIGGERS = ["enter", "exit"];
 export const TTM_ACTION_TRIGGERS = ["switch", "trap", "effect", "manual"];
@@ -348,6 +353,8 @@ export async function createSpeechTile({
   hidden = false,
   requirePlayerVision = false,
   hideBehindWalls = true,
+  activationCooldownEnabled = false,
+  activationCooldownSeconds = 1,
   width = 200,
   height = 200,
   clickActivation = "left",
@@ -462,6 +469,11 @@ export async function createSpeechTile({
         clickActivation,
         requirePlayerVision,
         hideBehindWalls,
+        activationCooldownEnabled,
+        activationCooldownSeconds: Math.max(
+          0.2,
+          Number(activationCooldownSeconds || 1)
+        ),
         originalState: {
           active: false,
           image: inactiveImage || textureSrc,
@@ -483,7 +495,12 @@ export async function createSpeechTile({
           teleportUseCooldown,
           teleportCooldownSeconds,
           requirePlayerVision,
-          hideBehindWalls
+          hideBehindWalls,
+          activationCooldownEnabled,
+          activationCooldownSeconds: Math.max(
+            0.2,
+            Number(activationCooldownSeconds || 1)
+          )
         }
       }),
       speech: {
@@ -575,12 +592,37 @@ export async function triggerSpeechTile(api, tileId, tokenLike = null, overrides
   if (!doc) return ttmNotice("warn", "Speech tile not found.");
 
   const utility = doc.getFlag(TTM_ID, "utility") ?? {};
+  const isSpeechOnly = !utility.template || utility.template === "speech";
 
-  if (overrides.skipUtilityAction !== true) {
+  if (
+    isSpeechOnly
+    && overrides.skipCooldownCheck !== true
+    && !canActivateTileNow(doc, {
+      commit: true,
+      notify: game.user?.isGM
+    })
+  ) {
+    return false;
+  }
+
+  if (overrides.skipUtilityAction !== true && !isSpeechOnly) {
     if (utility.template === "teleport") {
-      await moveTokenToTeleportDestination(doc, tokenLike, { debug: true });
+      if (!canActivateTileNow(doc, {
+        commit: true,
+        notify: game.user?.isGM
+      })) {
+        return false;
+      }
+
+      await runTeleportUtility(doc, tokenLike, { debug: true });
     } else {
-      await applyUtilityTemplateActions(api, doc, tokenLike);
+      const utilityResult = await applyUtilityTemplateActions(
+        api,
+        doc,
+        tokenLike
+      );
+
+      if (utilityResult === false) return false;
     }
   }
 
