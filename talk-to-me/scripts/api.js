@@ -287,11 +287,6 @@ async toggleLightTileById(tileId, userId = game.user?.id, tokenId = null) {
   }
 
   const result = await toggleLightTile(tileDoc);
-  console.log("TalkToMe Light API activation", {
-    tileId: tileDoc.id,
-    tileName: tileDoc.name,
-    active: result
-  });
   return result !== false;
 }
 

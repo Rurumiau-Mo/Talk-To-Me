@@ -1,8 +1,14 @@
+// =============================================================================
+// Hooks
+// =============================================================================
+// Registers Foundry hooks, socket handling, visibility refreshes, and scene lifecycle events.
+
 import { TTM_ID, TTM_SOCKET_ACTIONS } from "./constants.js";
 import { lightManager } from "./light-manager.js";
 import { migrateScene } from "./migration.js";
 
 
+// Visibility refresh state
 let talkToMeVisibilityRefreshPending = false;
 
 function scheduleTalkToMeTileVisibilityRefresh() {
@@ -115,7 +121,8 @@ Hooks.on("drawTile", tile => {
   );
 });
 
-  Hooks.on("canvasReady", async () => {
+  // Scene ready handling
+Hooks.on("canvasReady", async () => {
     const activeGM = game.users?.activeGM;
     const isMigrationGM =
       game.user?.isGM

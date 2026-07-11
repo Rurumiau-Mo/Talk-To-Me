@@ -404,6 +404,7 @@ toggleSwitchClickActivation() {
             group.hidden = trigger.value !== "switch" && template !== "switch";
 }
 
+  // Speech controls
   createSpeechPanel() {
     const panel = ttmMake("section", null, "ttm-panel");
     panel.dataset.panel = "speech";
@@ -1034,6 +1035,7 @@ pickTilePlacementPoint() {
   });
 }
 
+  // Create tile options
   createTilesPanel() {
     const panel = ttmMake("section", null, "ttm-panel");
     panel.dataset.panel = "tiles";
@@ -1831,6 +1833,7 @@ const updateTemplateVisibility = () => {
 
 
 
+// Manage current scene tiles
 openTileManager() {
   if (!ttmIsGM()) {
     ui.notifications.warn("TalkToMe tile management is a GM tool.");
@@ -2095,6 +2098,7 @@ refreshTileManagerList() {
   }
 }
 
+// Edit tile options
 openTileEditor(tileId = "") {
   if (!ttmIsGM()) {
     ui.notifications.warn("TalkToMe tile editing is a GM tool.");
@@ -2218,6 +2222,7 @@ getTalkToMeTiles(scene = canvas.scene) {
 }
 
 
+// Build tile editor
 createTileEditorBox() {
   const box = ttmMake("section", null, "ttm-editor-box");
   box.id = "ttm-tile-editor-box";
@@ -3192,6 +3197,7 @@ createTileEditorBox() {
   return box;
 }
 
+  // Macro generator
   createMacrosPanel() {
     const panel = ttmMake("section", null, "ttm-panel");
     panel.dataset.panel = "macros";

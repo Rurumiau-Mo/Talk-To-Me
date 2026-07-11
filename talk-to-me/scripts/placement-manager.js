@@ -1,5 +1,11 @@
+// =============================================================================
+// Placement Manager
+// =============================================================================
+// Calculates tile placement positions and stores pending placement state.
+
 import { TTM_ID } from "./constants.js";
 
+// Tile placement state
 class PlacementManager {
   centerOnPoint(x, y, width, height) {
     return {

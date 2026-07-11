@@ -1,3 +1,8 @@
+// =============================================================================
+// Tiles
+// =============================================================================
+// Creates TalkToMe tiles and runs speech-tile activation.
+
 import {
   TTM_ID,
   TTM_MATT_ID,
@@ -347,6 +352,7 @@ await api.toggleLightTileById("${macroTileId}", activatingUserId, activatingToke
 
 
 
+// Create TalkToMe tile
 export async function createSpeechTile({
   x = null,
   y = null,
@@ -621,6 +627,7 @@ export async function createSpeechTile({
   return doc ?? null;
 }
 
+// Activate speech tile
 export async function triggerSpeechTile(api, tileId, tokenLike = null, overrides = {}) {
   const doc = canvas.scene?.tiles?.get(tileId);
   if (!doc) return ttmNotice("warn", "Speech tile not found.");

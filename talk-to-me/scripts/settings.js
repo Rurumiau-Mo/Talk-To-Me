@@ -1,5 +1,11 @@
+// =============================================================================
+// Settings
+// =============================================================================
+// Registers module and world settings.
+
 import { TTM_ID } from "./constants.js";
 
+// Safe setting registration
 function safeRegisterSetting(key, data) {
   try {
     if (game.settings.settings?.has?.(`${TTM_ID}.${key}`)) return;

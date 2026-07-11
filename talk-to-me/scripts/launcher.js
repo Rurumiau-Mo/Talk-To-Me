@@ -1,5 +1,11 @@
+// =============================================================================
+// Launcher
+// =============================================================================
+// Creates the launcher control and waits for the TalkToMe API to become available.
+
 import { TTM_ID } from "./constants.js";
 
+// API lookup
 function getTalkToMeApi() {
   return game.talkToMe ?? game.modules.get(TTM_ID)?.api ?? null;
 }

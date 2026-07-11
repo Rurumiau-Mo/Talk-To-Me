@@ -28,6 +28,7 @@ export const TTM_TEMPLATES = {
 
 
 
+// Cooldowns and single-use state
 const talkToMeActivationCooldowns = new Map();
 const talkToMeSingleUseActivations = new Set();
 
@@ -551,6 +552,7 @@ export async function executeConfiguredTileProgram(
   return executed;
 }
 
+// Linked tile activation
 export async function triggerLinkedTalkToMeTile(api, tileDoc, tokenLike = null) {
   const flags = getUtilityFlags(tileDoc);
   const linkedId = flags.linkedTriggerTileId || flags.targetTileId;
@@ -694,6 +696,7 @@ export async function markTeleportTileActivated(tileDoc) {
 }
 
 
+// Utility action dispatcher
 export async function applyUtilityTemplateActions(api, tileDoc, tokenLike = null) {
   const flags = getUtilityFlags(tileDoc);
 
@@ -1009,6 +1012,7 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
 }
 
 
+// Reset all managed tiles
 export async function resetAllTalkToMeTiles({
   sourceTileDoc = null,
   deferSourceReset = false

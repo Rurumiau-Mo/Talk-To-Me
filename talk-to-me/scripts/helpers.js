@@ -9,15 +9,13 @@ import { TTM_ID } from "./constants.js";
 // Send a message to the Foundry notification UI.
 // We also log to the console so errors are easier to diagnose.
 export function ttmNotice(kind, message) {
-  console.log(`TalkToMe ${kind}: ${message}`);
-
   try {
     const notices = ui?.notifications;
     const fn = notices?.[kind];
 
     if (typeof fn === "function") fn.call(notices, message);
   } catch (err) {
-    console.log("TalkToMe notification failed:", err);
+    console.warn("TalkToMe notification failed:", err);
   }
 }
 

@@ -1,3 +1,8 @@
+// =============================================================================
+// Migration
+// =============================================================================
+// Upgrades older TalkToMe tile data to the current schema.
+
 import {
   TTM_ID,
   TTM_TILE_SCHEMA_VERSION,
@@ -163,6 +168,7 @@ function buildOriginalState(tileDoc, utility) {
   );
 }
 
+// Schema migrations
 function migrateToVersion1(tileDoc, data) {
   const utility = clone(data.utility);
   const speech = clone(data.speech);
@@ -441,6 +447,7 @@ export function buildTileMigration(tileDoc) {
   };
 }
 
+// Migrate one scene
 export async function migrateScene(scene, {
   dryRun = false
 } = {}) {
@@ -488,6 +495,7 @@ export async function migrateScene(scene, {
   };
 }
 
+// Migrate all scenes
 export async function migrateWorld({
   dryRun = false,
   notify = true,

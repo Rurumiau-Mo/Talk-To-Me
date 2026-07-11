@@ -1,5 +1,11 @@
+// =============================================================================
+// Light Manager
+// =============================================================================
+// Creates, links, toggles, moves, and removes AmbientLights owned by tiles.
+
 import { TTM_ID } from "./constants.js";
 
+// Linked light management
 class LightManager {
   constructor() {
     this.operations = new Map();
@@ -99,6 +105,7 @@ class LightManager {
     );
   }
 
+  // Toggle linked light
   async setActive(tileDoc, active) {
     return this.runExclusive(tileDoc.id, async () => {
       const currentTile = canvas.scene?.tiles?.get(tileDoc.id) ?? tileDoc;
