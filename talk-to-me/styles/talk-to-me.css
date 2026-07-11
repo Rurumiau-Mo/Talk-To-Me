@@ -343,3 +343,204 @@
 #talk-to-me-window .ttm-coordinate-picker-row button {
   flex: 0 0 auto;
 }
+
+
+.ttm-editor-box {
+  border: 1px solid var(--color-border-light-2, #777);
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.ttm-editor-fields {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ttm-editor-status {
+  margin: 6px 0;
+}
+
+.ttm-editor-box .ttm-button-row {
+  margin-top: 10px;
+}
+
+
+
+#talk-to-me-tile-editor-window {
+  position: fixed;
+  z-index: 1100;
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  max-height: 82vh;
+  background: #1f1f1f;
+  color: #f0f0e0;
+  border: 1px solid #000;
+  border-radius: 6px;
+  box-shadow: 0 0 18px #000;
+  overflow: hidden;
+}
+
+#talk-to-me-tile-editor-window .ttm-header {
+  cursor: move;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(0, 0, 0, 0.55);
+  border-bottom: 1px solid #000;
+}
+
+#talk-to-me-tile-editor-window .ttm-title {
+  margin: 0;
+  flex: 1;
+}
+
+#talk-to-me-tile-editor-window .ttm-header-button {
+  width: 28px;
+  height: 28px;
+  line-height: 1;
+}
+
+#talk-to-me-tile-editor-window .ttm-body {
+  padding: 0.75rem;
+  overflow-y: auto;
+  max-height: calc(82vh - 38px);
+  background: rgba(20, 20, 20, 0.98);
+}
+
+#talk-to-me-tile-editor-window .ttm-editor-box {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+#talk-to-me-tile-editor-window .form-group {
+  margin-bottom: 0.55rem;
+}
+
+#talk-to-me-tile-editor-window label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+#talk-to-me-tile-editor-window input[type="text"],
+#talk-to-me-tile-editor-window input[type="number"],
+#talk-to-me-tile-editor-window select,
+#talk-to-me-tile-editor-window textarea {
+  width: 100%;
+}
+
+#talk-to-me-tile-editor-window textarea {
+  resize: vertical;
+}
+
+#talk-to-me-tile-editor-window label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: normal;
+  margin: 0.4rem 0;
+}
+
+#talk-to-me-tile-editor-window .ttm-button-row,
+#talk-to-me-tile-editor-window .ttm-card-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+#talk-to-me-tile-editor-window .ttm-hint {
+  margin-top: 0;
+}
+
+#talk-to-me-tile-editor-window .notes {
+  color: #c7c7b8;
+}
+
+#talk-to-me-tile-editor-window .ttm-image-picker-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+#talk-to-me-tile-editor-window .ttm-image-picker-row input {
+  flex: 1;
+}
+
+#talk-to-me-tile-editor-window .ttm-icon-button {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 30px;
+}
+
+#talk-to-me-tile-editor-window button,
+#talk-to-me-tile-editor-window input,
+#talk-to-me-tile-editor-window select,
+#talk-to-me-tile-editor-window textarea {
+  color: inherit;
+}
+
+
+#talk-to-me-tile-manager-window {
+  position: fixed;
+  z-index: 1090;
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  max-height: 82vh;
+  background: #1f1f1f;
+  color: #f0f0e0;
+  border: 1px solid #000;
+  border-radius: 6px;
+  box-shadow: 0 0 18px #000;
+  overflow: hidden;
+}
+
+#talk-to-me-tile-manager-window .ttm-header {
+  cursor: move;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(0, 0, 0, 0.55);
+  border-bottom: 1px solid #000;
+}
+
+#talk-to-me-tile-manager-window .ttm-title {
+  margin: 0;
+  flex: 1;
+}
+
+#talk-to-me-tile-manager-window .ttm-header-button {
+  width: 28px;
+  height: 28px;
+  line-height: 1;
+}
+
+#talk-to-me-tile-manager-window .ttm-body {
+  padding: 0.75rem;
+  overflow-y: auto;
+  max-height: calc(82vh - 38px);
+  background: rgba(20, 20, 20, 0.98);
+}
+
+#talk-to-me-tile-manager-window .ttm-button-row,
+#talk-to-me-tile-manager-window .ttm-card-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+#talk-to-me-tile-manager-window .ttm-tile-card {
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid #000;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#talk-to-me-tile-manager-window .notes {
+  color: #c7c7b8;
+}

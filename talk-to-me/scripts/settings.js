@@ -31,6 +31,16 @@ export function registerSettings() {
     default: ""
   });
 
+
+safeRegisterSetting("useTalkToMeTileEditor", {
+  name: "Use TalkToMe Editor for Tile Editing",
+  hint: "When enabled, TalkToMe managed-list Edit buttons and GM double-left-clicks on TalkToMe tiles open the TalkToMe tile editor instead of Foundry's standard Tile sheet.",
+  scope: "world",
+  config: true,
+  type: Boolean,
+  default: true
+});
+
   safeRegisterSetting("postChatByDefault", {
     name: "Post to Chat by Default",
     hint: "If enabled, TalkToMe also posts speech text to chat.",

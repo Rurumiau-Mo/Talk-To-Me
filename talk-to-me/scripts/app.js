@@ -24,11 +24,31 @@ export class TalkToMeApp {
   constructor(api) {
     this.api = api;
     this.element = null;
+    this.editorElement = null;
+    this.managerElement = null;
+    this.managerDrag = {
+      active: false,
+      startX: 0,
+      startY: 0,
+      startLeft: 0,
+      startTop: 0
+    };
+    this.editorDrag = {
+      active: false,
+      startX: 0,
+      startY: 0,
+      startLeft: 0,
+      startTop: 0
+    };
     this.activeTab = "speech";
     this.drag = { active: false, startX: 0, startY: 0, startLeft: 0, startTop: 0 };
 
     this.boundMouseMove = event => this.doDrag(event);
     this.boundMouseUp = () => this.endDrag();
+    this.boundEditorMouseMove = event => this.doEditorDrag(event);
+    this.boundEditorMouseUp = () => this.endEditorDrag();
+    this.boundManagerMouseMove = event => this.doManagerDrag(event);
+    this.boundManagerMouseUp = () => this.endManagerDrag();
   }
 
   open() {
@@ -1150,8 +1170,21 @@ const updateTemplateVisibility = () => {
     ttmAdd(panel, resetGroup);
     ttmAdd(panel, buttons);
     ttmAdd(panel, ttmMake("hr"));
-    ttmAdd(panel, ttmMake("h3", "Managed Trigger Tiles"));
-    ttmAdd(panel, list);
+
+    const openEditor = ttmMake("button", "Open Tile Editor");
+    openEditor.type = "button";
+    openEditor.addEventListener("click", () => this.openTileEditor());
+
+    ttmAdd(panel, openEditor);
+
+    const openManager = ttmMake("button", "Manage TalkToMe Tiles");
+    openManager.type = "button";
+    openManager.addEventListener(
+      "click",
+      () => this.openTileManager()
+    );
+
+    ttmAdd(panel, openManager);
 
     setTimeout(() => {
       updateTemplateVisibility();
@@ -1160,6 +1193,973 @@ const updateTemplateVisibility = () => {
 
     return panel;
   }
+
+
+
+
+openTileManager() {
+  if (!ttmIsGM()) {
+    ui.notifications.warn("TalkToMe tile management is a GM tool.");
+    return;
+  }
+
+  this.closeTileManager();
+
+  const root = ttmMake(
+    "section",
+    null,
+    "ttm-app ttm-tile-manager-window window-app"
+  );
+  root.id = "talk-to-me-tile-manager-window";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-label", "Manage TalkToMe Tiles");
+  root.style.left = "calc(50vw - 260px)";
+  root.style.top = "100px";
+
+  const header = ttmMake(
+    "header",
+    null,
+    "ttm-header window-header flexrow"
+  );
+  const title = ttmMake(
+    "h4",
+    "Manage TalkToMe Tiles",
+    "ttm-title window-title"
+  );
+  const close = ttmMake("button", "×", "ttm-header-button");
+  close.type = "button";
+  close.title = "Close";
+  close.addEventListener("click", () => this.closeTileManager());
+
+  header.addEventListener("mousedown", event => {
+    if (event.target === close) return;
+    this.startManagerDrag(event);
+  });
+
+  ttmAdd(header, title);
+  ttmAdd(header, close);
+
+  const body = ttmMake("div", null, "ttm-body window-content");
+  const toolbar = ttmMake("div", null, "ttm-button-row");
+
+  const refresh = ttmMake("button", "Refresh");
+  refresh.type = "button";
+  refresh.addEventListener(
+    "click",
+    () => this.refreshTileManagerList()
+  );
+
+  const createNew = ttmMake("button", "Create New Tile");
+  createNew.type = "button";
+  createNew.addEventListener("click", () => {
+    this.closeTileManager();
+    this.open();
+    this.switchTab("tiles");
+  });
+
+  ttmAdd(toolbar, refresh);
+  ttmAdd(toolbar, createNew);
+
+  const list = ttmMake("div", null, "ttm-managed-list");
+  list.id = "ttm-popout-managed-tiles";
+
+  ttmAdd(body, toolbar);
+  ttmAdd(body, list);
+  ttmAdd(root, header);
+  ttmAdd(root, body);
+
+  document.body.appendChild(root);
+  this.managerElement = root;
+
+  document.addEventListener("mousemove", this.boundManagerMouseMove);
+  document.addEventListener("mouseup", this.boundManagerMouseUp);
+
+  this.refreshTileManagerList();
+}
+
+closeTileManager() {
+  document.removeEventListener(
+    "mousemove",
+    this.boundManagerMouseMove
+  );
+  document.removeEventListener(
+    "mouseup",
+    this.boundManagerMouseUp
+  );
+
+  document
+    .getElementById("talk-to-me-tile-manager-window")
+    ?.remove();
+
+  this.managerElement = null;
+}
+
+startManagerDrag(event) {
+  if (!this.managerElement) return;
+
+  this.managerDrag.active = true;
+  this.managerDrag.startX = event.clientX;
+  this.managerDrag.startY = event.clientY;
+
+  const rect = this.managerElement.getBoundingClientRect();
+  this.managerDrag.startLeft = rect.left;
+  this.managerDrag.startTop = rect.top;
+
+  event.preventDefault();
+}
+
+doManagerDrag(event) {
+  if (!this.managerDrag.active || !this.managerElement) return;
+
+  this.managerElement.style.left =
+    `${this.managerDrag.startLeft + event.clientX - this.managerDrag.startX}px`;
+  this.managerElement.style.top =
+    `${this.managerDrag.startTop + event.clientY - this.managerDrag.startY}px`;
+}
+
+endManagerDrag() {
+  this.managerDrag.active = false;
+}
+
+refreshTileManagerList() {
+  const list = this.managerElement?.querySelector(
+    "#ttm-popout-managed-tiles"
+  );
+  if (!list) return;
+
+  const docs = this.getTalkToMeTiles();
+  list.innerHTML = "";
+
+  if (!docs.length) {
+    list.innerHTML =
+      `<p class="notes">No TalkToMe tiles on this scene yet.</p>`;
+    return;
+  }
+
+  for (const doc of docs) {
+    const utility = doc.getFlag(TTM_ID, "utility") ?? {};
+    const speech = doc.getFlag(TTM_ID, "speech") ?? {};
+    const templateName = utility.template ?? "speech";
+    const triggerName =
+      speech.trigger ?? utility.trigger ?? "manual";
+    const displayName =
+      doc.name || speech.name || "TalkToMe Tile";
+
+    const card = ttmMake("article", null, "ttm-tile-card");
+    card.innerHTML = `
+      <div>
+        <strong>${ttmEscapeHtml(displayName)}</strong>
+        <p class="notes">
+          Template: ${ttmEscapeHtml(templateName)}
+          · Trigger: ${ttmEscapeHtml(triggerName)}
+        </p>
+      </div>
+    `;
+
+    const row = ttmMake("div", null, "ttm-card-buttons");
+
+    const edit = ttmMake("button", "Edit");
+    edit.type = "button";
+    edit.addEventListener("click", () => {
+      this.closeTileManager();
+      this.openTileEditor(doc.id);
+    });
+
+    const select = ttmMake("button", "Select");
+    select.type = "button";
+    select.addEventListener("click", () => {
+      canvas.tiles?.activate?.();
+      canvas.tiles?.get(doc.id)?.control?.({
+        releaseOthers: true
+      });
+      canvas.animatePan?.({
+        x: Number(doc.x ?? 0) + Number(doc.width ?? 0) / 2,
+        y: Number(doc.y ?? 0) + Number(doc.height ?? 0) / 2
+      });
+    });
+
+    const triggerButton = ttmMake("button", "Trigger");
+    triggerButton.type = "button";
+    triggerButton.addEventListener(
+      "click",
+      () => this.api.triggerSpeechTile(doc.id)
+    );
+
+    const remove = ttmMake("button", "Delete");
+    remove.type = "button";
+    remove.addEventListener("click", async () => {
+      const ok = await Dialog.confirm({
+        title: "Delete TalkToMe Tile?",
+        content:
+          `<p>Delete <strong>${ttmEscapeHtml(displayName)}</strong>?</p>`
+      });
+
+      if (!ok) return;
+
+      await doc.delete();
+      this.refreshTileManagerList();
+      this.refreshManagedTileList();
+    });
+
+    ttmAdd(row, edit);
+    ttmAdd(row, select);
+    ttmAdd(row, triggerButton);
+    ttmAdd(row, remove);
+    ttmAdd(card, row);
+    ttmAdd(list, card);
+  }
+}
+
+openTileEditor(tileId = "") {
+  if (!ttmIsGM()) {
+    ui.notifications.warn("TalkToMe tile editing is a GM tool.");
+    return;
+  }
+
+  this.closeTileEditor();
+
+  const root = ttmMake(
+    "section",
+    null,
+    "ttm-app ttm-tile-editor-window window-app"
+  );
+  root.id = "talk-to-me-tile-editor-window";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-label", "TalkToMe Tile Editor");
+  root.style.left = "calc(50vw - 260px)";
+  root.style.top = "110px";
+
+  const header = ttmMake(
+    "header",
+    null,
+    "ttm-header window-header flexrow"
+  );
+  const title = ttmMake(
+    "h4",
+    "TalkToMe Tile Editor",
+    "ttm-title window-title"
+  );
+  const close = ttmMake("button", "×", "ttm-header-button");
+  close.type = "button";
+  close.title = "Close";
+  close.addEventListener("click", () => this.closeTileEditor());
+
+  header.addEventListener("mousedown", event => {
+    if (event.target === close) return;
+    this.startEditorDrag(event);
+  });
+
+  ttmAdd(header, title);
+  ttmAdd(header, close);
+
+  const body = ttmMake("div", null, "ttm-body window-content");
+  ttmAdd(body, this.createTileEditorBox());
+  ttmAdd(root, header);
+  ttmAdd(root, body);
+
+  document.body.appendChild(root);
+  this.editorElement = root;
+
+  document.addEventListener("mousemove", this.boundEditorMouseMove);
+  document.addEventListener("mouseup", this.boundEditorMouseUp);
+
+  if (tileId) {
+    const selector = root.querySelector("#ttm-edit-tile-select");
+    if (selector) {
+      selector.value = tileId;
+      selector.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+}
+
+closeTileEditor() {
+  document.removeEventListener(
+    "mousemove",
+    this.boundEditorMouseMove
+  );
+  document.removeEventListener(
+    "mouseup",
+    this.boundEditorMouseUp
+  );
+
+  document
+    .getElementById("talk-to-me-tile-editor-window")
+    ?.remove();
+
+  this.editorElement = null;
+}
+
+startEditorDrag(event) {
+  if (!this.editorElement) return;
+
+  this.editorDrag.active = true;
+  this.editorDrag.startX = event.clientX;
+  this.editorDrag.startY = event.clientY;
+
+  const rect = this.editorElement.getBoundingClientRect();
+  this.editorDrag.startLeft = rect.left;
+  this.editorDrag.startTop = rect.top;
+
+  event.preventDefault();
+}
+
+doEditorDrag(event) {
+  if (!this.editorDrag.active || !this.editorElement) return;
+
+  this.editorElement.style.left =
+    `${this.editorDrag.startLeft + event.clientX - this.editorDrag.startX}px`;
+  this.editorElement.style.top =
+    `${this.editorDrag.startTop + event.clientY - this.editorDrag.startY}px`;
+}
+
+endEditorDrag() {
+  this.editorDrag.active = false;
+}
+
+
+getTalkToMeTiles() {
+  return (canvas.scene?.tiles?.contents ?? [])
+    .filter(tileDoc => {
+      const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
+      const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
+      return Boolean(utility.template || speech.managed);
+    })
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
+
+createTileEditorBox() {
+  const box = ttmMake("section", null, "ttm-editor-box");
+  box.id = "ttm-tile-editor-box";
+
+  const selector = ttmMake("select");
+  selector.id = "ttm-edit-tile-select";
+
+  const blank = ttmMake("option", "— Select a TalkToMe tile —");
+  blank.value = "";
+  ttmAdd(selector, blank);
+
+  for (const tileDoc of this.getTalkToMeTiles()) {
+    const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
+    const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
+    const templateName = utility.template ?? "speech";
+    const option = ttmMake(
+      "option",
+      `${tileDoc.name ?? speech.name ?? "Unnamed Tile"} [${templateName}]`
+    );
+    option.value = tileDoc.id;
+    ttmAdd(selector, option);
+  }
+
+  const makeInput = (type = "text") => {
+    const input = ttmMake("input");
+    input.type = type;
+    return input;
+  };
+
+  const makeNumber = (step = null, min = null) => {
+    const input = makeInput("number");
+    if (step !== null) input.step = step;
+    if (min !== null) input.min = min;
+    return input;
+  };
+
+  const makeSelect = options => {
+    const select = ttmMake("select");
+    for (const [value, label] of options) {
+      const option = ttmMake("option", label);
+      option.value = value;
+      ttmAdd(select, option);
+    }
+    return select;
+  };
+
+  const name = makeInput();
+  const template = makeSelect([
+    ["speech", "Speech Bubble"],
+    ["switch", "Switch Activation"],
+    ["light", "Light Activation"],
+    ["trap", "Trap Activation"],
+    ["teleport", "Teleport Activation"],
+    ["reset", "Reset Tile"]
+  ]);
+  const trigger = makeSelect([
+    ["enter", "Token enters tile"],
+    ["exit", "Token exits tile"],
+    ["switch", "Click / switch activation"],
+    ["trap", "Trap triggered"],
+    ["effect", "Magic spell/effect"],
+    ["manual", "Manual only"]
+  ]);
+  const clickActivation = makeSelect([
+    ["left", "Left click"],
+    ["double-left", "Double left click"],
+    ["right", "Right click"],
+    ["any", "Any click"]
+  ]);
+
+  const width = makeNumber(null, 1);
+  const height = makeNumber(null, 1);
+  const inactiveImage = makeInput();
+  const activeImage = makeInput();
+
+  const linkedTileId = makeInput();
+  linkedTileId.placeholder = "Selected linked TalkToMe tile ID";
+
+  const doorWallId = makeInput();
+  const doorAction = makeSelect([
+    ["toggle", "Toggle door"],
+    ["open", "Open door"],
+    ["close", "Close door"],
+    ["lock", "Lock door"]
+  ]);
+
+  const lightDim = makeNumber();
+  const lightBright = makeNumber();
+  const lightColor = makeInput();
+  const lightAlpha = makeNumber("0.1");
+
+  const saveAbility = makeSelect(
+    ["str", "dex", "con", "int", "wis", "cha"]
+      .map(value => [value, value.toUpperCase()])
+  );
+  const saveDC = makeNumber();
+  const trapTarget = makeSelect([
+    ["triggering-token", "Triggering Token"],
+    ["tokens-within-tile", "Tokens Within Tile"],
+    ["use-player-tokens", "Use Player Tokens"]
+  ]);
+
+  const teleportX = makeNumber();
+  const teleportY = makeNumber();
+  const teleportOffsetX = makeNumber();
+  const teleportOffsetY = makeNumber();
+  const teleportResetSeconds = makeNumber("0.1", 0);
+  const teleportCooldownSeconds = makeNumber("0.1", 0);
+
+  const teleportAutoReset = this.createCheckbox(
+    "ttm-edit-teleport-auto-reset",
+    "Auto reset after activation",
+    true
+  );
+  const teleportUseCooldown = this.createCheckbox(
+    "ttm-edit-teleport-use-cooldown",
+    "Use token teleport cooldown",
+    true
+  );
+  const teleportAvoidTiles = this.createCheckbox(
+    "ttm-edit-teleport-avoid-tiles",
+    "Prevent landing on teleport tiles",
+    true
+  );
+
+  const speechMode = makeSelect([
+    ["table", "Roll from table"],
+    ["custom", "Use custom text"]
+  ]);
+  const speechTable = this.createTableSelect("ttm-edit-speech-table");
+  const speechText = ttmMake("textarea");
+  speechText.rows = 4;
+  speechText.placeholder = "Custom speech text";
+  const speechNpcName = makeInput();
+  const speechSubjectToken = this.createTokenSelect(
+    "ttm-edit-speech-subject-token"
+  );
+  speechSubjectToken.dataset.ttmTokenSelect = "true";
+
+  const postChat = this.createCheckbox(
+    "ttm-edit-post-chat",
+    "Post speech to chat",
+    false
+  );
+  const zoomToSpeaker = this.createCheckbox(
+    "ttm-edit-zoom-speaker",
+    "Zoom to speaker",
+    false
+  );
+
+  const showToPlayers = this.createCheckbox(
+    "ttm-edit-show-players",
+    "Show this tile to players",
+    true
+  );
+  const requireVision = this.createCheckbox(
+    "ttm-edit-require-vision",
+    "Players require vision to activate",
+    false
+  );
+  const hideBehindWalls = this.createCheckbox(
+    "ttm-edit-hide-walls",
+    "Hide from players when blocked by walls",
+    true
+  );
+  const cooldownEnabled = this.createCheckbox(
+    "ttm-edit-cooldown-enabled",
+    "Enable activation cooldown",
+    false
+  );
+  const cooldownSeconds = makeNumber("0.1", 0.2);
+
+  const status = ttmMake(
+    "p",
+    "Select a tile to load its TalkToMe settings.",
+    "notes ttm-editor-status"
+  );
+
+  const fields = ttmMake("div", null, "ttm-editor-fields");
+  fields.hidden = true;
+
+  const makeGroup = (title, templates = []) => {
+    const group = ttmMake("section", null, "ttm-editor-template-group");
+    group.dataset.templates = templates.join(",");
+    ttmAdd(group, ttmMake("h3", title));
+    return group;
+  };
+
+  const commonGroup = makeGroup("Common Settings", [
+    "speech", "switch", "light", "trap", "teleport", "reset"
+  ]);
+  ttmAdd(commonGroup, this.createField("Tile name", name));
+  ttmAdd(commonGroup, this.createField("Template", template));
+  ttmAdd(commonGroup, this.createField("Trigger", trigger));
+  const clickActivationField = this.createField(
+    "Click activation",
+    clickActivation
+  );
+  clickActivationField.dataset.editorClickActivation = "true";
+  ttmAdd(commonGroup, clickActivationField);
+  ttmAdd(commonGroup, this.createField("Width", width));
+  ttmAdd(commonGroup, this.createField("Height", height));
+  ttmAdd(commonGroup, this.createImagePickerField(
+    "Inactive/default image",
+    inactiveImage
+  ));
+  ttmAdd(commonGroup, this.createImagePickerField(
+    "Active image",
+    activeImage
+  ));
+  ttmAdd(commonGroup, showToPlayers.label);
+  ttmAdd(commonGroup, requireVision.label);
+  ttmAdd(commonGroup, hideBehindWalls.label);
+  ttmAdd(commonGroup, cooldownEnabled.label);
+  ttmAdd(commonGroup, this.createField(
+    "Pause after activation (seconds)",
+    cooldownSeconds
+  ));
+
+  const speechGroup = makeGroup("Speech Settings", ["speech"]);
+  ttmAdd(speechGroup, this.createField("Speech source", speechMode));
+  ttmAdd(speechGroup, this.createField("RollTable", speechTable));
+  ttmAdd(speechGroup, this.createField("Custom speech", speechText));
+  ttmAdd(speechGroup, this.createField("NPC name override", speechNpcName));
+  ttmAdd(speechGroup, this.createField("Speaker token", speechSubjectToken));
+  ttmAdd(speechGroup, postChat.label);
+  ttmAdd(speechGroup, zoomToSpeaker.label);
+
+  const switchGroup = makeGroup("Switch Settings", ["switch"]);
+  ttmAdd(switchGroup, this.createField("Door Wall ID", doorWallId));
+  ttmAdd(switchGroup, this.createField("Door action", doorAction));
+
+  const linkedGroup = makeGroup(
+    "Linked Tile",
+    ["switch", "light", "trap", "teleport", "reset"]
+  );
+  ttmAdd(linkedGroup, this.createTilePickerField(
+    "Linked Tile ID",
+    linkedTileId
+  ));
+
+  const lightGroup = makeGroup("Light Settings", ["light"]);
+  ttmAdd(lightGroup, this.createField("Dim radius", lightDim));
+  ttmAdd(lightGroup, this.createField("Bright radius", lightBright));
+  ttmAdd(lightGroup, this.createField("Colour", lightColor));
+  ttmAdd(lightGroup, this.createField("Alpha", lightAlpha));
+
+  const trapGroup = makeGroup("Trap Settings", ["trap"]);
+  ttmAdd(trapGroup, this.createField("Save ability", saveAbility));
+  ttmAdd(trapGroup, this.createField("Save DC", saveDC));
+  ttmAdd(trapGroup, this.createField("Target mode", trapTarget));
+
+  const teleportGroup = makeGroup("Teleport Settings", ["teleport"]);
+  ttmAdd(teleportGroup, this.createField("Destination X", teleportX));
+  ttmAdd(teleportGroup, this.createField("Destination Y", teleportY));
+  ttmAdd(teleportGroup, this.createField("Offset X", teleportOffsetX));
+  ttmAdd(teleportGroup, this.createField("Offset Y", teleportOffsetY));
+  ttmAdd(teleportGroup, teleportAutoReset.label);
+  ttmAdd(teleportGroup, this.createField(
+    "Auto-reset delay (seconds)",
+    teleportResetSeconds
+  ));
+  ttmAdd(teleportGroup, teleportUseCooldown.label);
+  ttmAdd(teleportGroup, this.createField(
+    "Token teleport cooldown (seconds)",
+    teleportCooldownSeconds
+  ));
+  ttmAdd(teleportGroup, teleportAvoidTiles.label);
+
+  const resetGroup = makeGroup("Reset Settings", ["reset"]);
+  ttmAdd(
+    resetGroup,
+    this.createHint(
+      "Reset tiles restore all TalkToMe utility tiles to their saved original state."
+    )
+  );
+
+  for (const group of [
+    commonGroup,
+    speechGroup,
+    switchGroup,
+    linkedGroup,
+    lightGroup,
+    trapGroup,
+    teleportGroup,
+    resetGroup
+  ]) {
+    ttmAdd(fields, group);
+  }
+
+  const buttons = ttmMake("div", null, "ttm-button-row");
+  const selectOnCanvas = ttmMake("button", "Select on Canvas");
+  selectOnCanvas.type = "button";
+  const reload = ttmMake("button", "Reload");
+  reload.type = "button";
+  const save = ttmMake("button", "Save Changes");
+  save.type = "button";
+
+  const getSelectedTile = () => {
+    return selector.value
+      ? canvas.scene?.tiles?.get(selector.value) ?? null
+      : null;
+  };
+
+  const updateCooldownState = () => {
+    cooldownSeconds.disabled = !cooldownEnabled.input.checked;
+  };
+
+  const updateSpeechMode = () => {
+    speechTable.disabled = speechMode.value !== "table";
+    speechText.disabled = speechMode.value !== "custom";
+  };
+
+  const updateTemplateGroups = () => {
+    const selected = template.value;
+
+    for (const group of fields.querySelectorAll(
+      ".ttm-editor-template-group"
+    )) {
+      const templates = String(group.dataset.templates ?? "").split(",");
+      group.hidden = !templates.includes(selected);
+    }
+
+    const clickField = fields.querySelector(
+      "[data-editor-click-activation='true']"
+    );
+
+    if (clickField) {
+      clickField.hidden =
+        selected === "speech"
+        && trigger.value !== "switch";
+    }
+
+    updateSpeechMode();
+  };
+
+  const loadTile = () => {
+    const tileDoc = getSelectedTile();
+    fields.hidden = !tileDoc;
+
+    if (!tileDoc) {
+      status.textContent =
+        "Select a tile to load its TalkToMe settings.";
+      return;
+    }
+
+    const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
+    const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
+    const selectedTemplate = utility.template ?? "speech";
+
+    name.value = tileDoc.name ?? speech.name ?? "";
+    template.value = selectedTemplate;
+    trigger.value = speech.trigger ?? utility.trigger ?? "manual";
+    clickActivation.value =
+      speech.clickActivation
+      ?? utility.clickActivation
+      ?? "left";
+
+    width.value = Number(tileDoc.width ?? 100);
+    height.value = Number(tileDoc.height ?? 100);
+    inactiveImage.value =
+      utility.inactiveImage
+      ?? utility.defaultImage
+      ?? tileDoc.texture?.src
+      ?? "";
+    activeImage.value = utility.activeImage ?? "";
+
+    // Always resolve either historical linked field into the editor.
+    linkedTileId.value =
+      utility.linkedTriggerTileId
+      || utility.targetTileId
+      || "";
+
+    doorWallId.value = utility.doorWallId ?? "";
+    doorAction.value = utility.doorAction ?? "toggle";
+
+    lightDim.value = Number(utility.lightDim ?? 20);
+    lightBright.value = Number(utility.lightBright ?? 10);
+    lightColor.value = utility.lightColor ?? "#ffffff";
+    lightAlpha.value = Number(utility.lightAlpha ?? 0.5);
+
+    saveAbility.value = utility.saveAbility ?? "dex";
+    saveDC.value = Number(utility.saveDC ?? 10);
+    trapTarget.value = utility.trapTarget ?? "triggering-token";
+
+    teleportX.value = utility.teleportX ?? "";
+    teleportY.value = utility.teleportY ?? "";
+    teleportOffsetX.value = Number(utility.teleportOffsetX ?? 0);
+    teleportOffsetY.value = Number(utility.teleportOffsetY ?? 0);
+    teleportAutoReset.input.checked =
+      utility.teleportAutoReset !== false;
+    teleportResetSeconds.value = Number(
+      utility.teleportResetSeconds ?? 3
+    );
+    teleportUseCooldown.input.checked =
+      utility.teleportUseCooldown !== false;
+    teleportCooldownSeconds.value = Number(
+      utility.teleportCooldownSeconds ?? 3
+    );
+    teleportAvoidTiles.input.checked =
+      utility.teleportAvoidTiles !== false;
+
+    speechMode.value = speech.mode ?? "table";
+    speechTable.value = speech.tableId ?? "";
+    speechText.value = speech.text ?? "";
+    speechNpcName.value = speech.npcName ?? "";
+    speechSubjectToken.value = speech.subjectTokenId ?? "";
+    postChat.input.checked = speech.postChat === true;
+    zoomToSpeaker.input.checked = speech.zoomToSpeaker === true;
+
+    showToPlayers.input.checked = tileDoc.hidden !== true;
+    requireVision.input.checked =
+      utility.requirePlayerVision === true;
+    hideBehindWalls.input.checked =
+      utility.hideBehindWalls === true;
+    cooldownEnabled.input.checked =
+      utility.activationCooldownEnabled === true;
+    cooldownSeconds.value = Number(
+      utility.activationCooldownSeconds ?? 1
+    );
+
+    updateCooldownState();
+    updateTemplateGroups();
+
+    status.textContent =
+      `Editing ${tileDoc.name ?? tileDoc.id} (${tileDoc.id})`;
+  };
+
+  selector.addEventListener("change", loadTile);
+  reload.addEventListener("click", loadTile);
+  template.addEventListener("change", updateTemplateGroups);
+  trigger.addEventListener("change", updateTemplateGroups);
+  speechMode.addEventListener("change", updateSpeechMode);
+  cooldownEnabled.input.addEventListener(
+    "change",
+    updateCooldownState
+  );
+
+  selectOnCanvas.addEventListener("click", () => {
+    const tileDoc = getSelectedTile();
+    if (!tileDoc) return;
+
+    canvas.tiles?.activate?.();
+    canvas.tiles?.get(tileDoc.id)?.control?.({ releaseOthers: true });
+    canvas.animatePan?.({
+      x: Number(tileDoc.x ?? 0) + Number(tileDoc.width ?? 0) / 2,
+      y: Number(tileDoc.y ?? 0) + Number(tileDoc.height ?? 0) / 2
+    });
+  });
+
+  save.addEventListener("click", async () => {
+    const tileDoc = getSelectedTile();
+
+    if (!tileDoc) {
+      ui.notifications.warn("Select a TalkToMe tile to edit.");
+      return;
+    }
+
+    const currentUtility =
+      tileDoc.getFlag(TTM_ID, "utility") ?? {};
+    const currentSpeech =
+      tileDoc.getFlag(TTM_ID, "speech") ?? {};
+    const selectedTemplate = template.value;
+    const chosenInactiveImage = inactiveImage.value.trim();
+    const chosenLinkedId = linkedTileId.value.trim();
+
+    const utilityPatch = {
+      template: selectedTemplate,
+      trigger: trigger.value,
+      clickActivation: clickActivation.value,
+      inactiveImage: chosenInactiveImage,
+      defaultImage: chosenInactiveImage,
+      activeImage: activeImage.value.trim(),
+      linkedTriggerTileId: chosenLinkedId,
+      targetTileId: chosenLinkedId,
+      requirePlayerVision: requireVision.input.checked,
+      hideBehindWalls: hideBehindWalls.input.checked,
+      activationCooldownEnabled: cooldownEnabled.input.checked,
+      activationCooldownSeconds: Math.max(
+        0.2,
+        Number(cooldownSeconds.value || 1)
+      )
+    };
+
+    if (selectedTemplate === "switch") {
+      Object.assign(utilityPatch, {
+        doorWallId: doorWallId.value.trim(),
+        doorAction: doorAction.value
+      });
+    }
+
+    if (selectedTemplate === "light") {
+      Object.assign(utilityPatch, {
+        lightDim: Number(lightDim.value || 20),
+        lightBright: Number(lightBright.value || 10),
+        lightColor: lightColor.value.trim() || "#ffffff",
+        lightAlpha: Number(lightAlpha.value || 0.5)
+      });
+    }
+
+    if (selectedTemplate === "trap") {
+      Object.assign(utilityPatch, {
+        saveAbility: saveAbility.value,
+        saveDC: Number(saveDC.value || 10),
+        trapTarget: trapTarget.value
+      });
+    }
+
+    if (selectedTemplate === "teleport") {
+      Object.assign(utilityPatch, {
+        teleportX: teleportX.value,
+        teleportY: teleportY.value,
+        teleportOffsetX: Number(teleportOffsetX.value || 0),
+        teleportOffsetY: Number(teleportOffsetY.value || 0),
+        teleportAutoReset: teleportAutoReset.input.checked,
+        teleportResetSeconds: Number(
+          teleportResetSeconds.value || 0
+        ),
+        teleportUseCooldown: teleportUseCooldown.input.checked,
+        teleportCooldownSeconds: Number(
+          teleportCooldownSeconds.value || 0
+        ),
+        teleportAvoidTiles: teleportAvoidTiles.input.checked
+      });
+    }
+
+    const originalPatch = {
+      active: false,
+      image: chosenInactiveImage,
+      inactiveImage: chosenInactiveImage,
+      activeImage: activeImage.value.trim(),
+      requirePlayerVision: requireVision.input.checked,
+      hideBehindWalls: hideBehindWalls.input.checked,
+      activationCooldownEnabled: cooldownEnabled.input.checked,
+      activationCooldownSeconds: Math.max(
+        0.2,
+        Number(cooldownSeconds.value || 1)
+      ),
+      ...utilityPatch
+    };
+
+    const utilityUpdates = foundry.utils.mergeObject(
+      currentUtility,
+      {
+        ...utilityPatch,
+        originalState: foundry.utils.mergeObject(
+          currentUtility.originalState ?? {},
+          originalPatch,
+          { inplace: false }
+        )
+      },
+      { inplace: false }
+    );
+
+    const speechUpdates = foundry.utils.mergeObject(
+      currentSpeech,
+      {
+        managed: true,
+        name: name.value.trim(),
+        trigger: trigger.value,
+        clickActivation: clickActivation.value,
+        tileImage: chosenInactiveImage,
+        mode: selectedTemplate === "speech"
+          ? speechMode.value
+          : currentSpeech.mode,
+        tableId: selectedTemplate === "speech"
+          ? speechTable.value
+          : currentSpeech.tableId,
+        text: selectedTemplate === "speech"
+          ? speechText.value
+          : currentSpeech.text,
+        npcName: selectedTemplate === "speech"
+          ? speechNpcName.value.trim()
+          : currentSpeech.npcName,
+        subjectTokenId: selectedTemplate === "speech"
+          ? speechSubjectToken.value
+          : currentSpeech.subjectTokenId,
+        postChat: selectedTemplate === "speech"
+          ? postChat.input.checked
+          : currentSpeech.postChat,
+        zoomToSpeaker: selectedTemplate === "speech"
+          ? zoomToSpeaker.input.checked
+          : currentSpeech.zoomToSpeaker
+      },
+      { inplace: false }
+    );
+
+    const updates = {
+      name: name.value.trim() || tileDoc.name,
+      width: Math.max(
+        1,
+        Number(width.value || tileDoc.width || 100)
+      ),
+      height: Math.max(
+        1,
+        Number(height.value || tileDoc.height || 100)
+      ),
+      hidden: !showToPlayers.input.checked,
+      [`flags.${TTM_ID}.utility`]: utilityUpdates,
+      [`flags.${TTM_ID}.speech`]: speechUpdates
+    };
+
+    if (chosenInactiveImage && utilityUpdates.active !== true) {
+      updates["texture.src"] = chosenInactiveImage;
+    }
+
+    await tileDoc.update(updates);
+
+    ui.notifications.info(
+      `TalkToMe updated ${tileDoc.name ?? tileDoc.id}.`
+    );
+
+    this.refreshManagedTileList();
+    loadTile();
+  });
+
+  ttmAdd(buttons, selectOnCanvas);
+  ttmAdd(buttons, reload);
+  ttmAdd(buttons, save);
+
+  ttmAdd(box, this.createField("TalkToMe tile", selector));
+  ttmAdd(box, status);
+  ttmAdd(box, fields);
+  ttmAdd(box, buttons);
+
+  setTimeout(() => {
+    updateCooldownState();
+    updateTemplateGroups();
+  }, 0);
+
+  return box;
+}
 
   createMacrosPanel() {
     const panel = ttmMake("section", null, "ttm-panel");
@@ -1267,75 +2267,121 @@ const updateTemplateVisibility = () => {
     }
   }
 
-  refreshManagedTileList() {
-    if (!this.element) return;
 
-    const list = this.element.querySelector("#ttm-managed-tiles");
-    if (!list) return;
+refreshManagedTileList() {
+    if (this.managerElement) this.refreshTileManagerList();
+  if (!this.element) return;
 
-    list.innerHTML = "";
-    const docs = this.api.getManagedSpeechTiles();
+  const list = this.element.querySelector("#ttm-managed-tiles");
+  const editorSelect = this.element.querySelector("#ttm-edit-tile-select");
+  if (!list) return;
 
-    if (!docs.length) {
-      list.innerHTML = `<p class="notes">No TalkToMe speech tiles on this scene yet.</p>`;
-      return;
-    }
+  const selectedEditorId = editorSelect?.value ?? "";
+  const docs = this.getTalkToMeTiles();
+
+  list.innerHTML = "";
+
+  if (editorSelect) {
+    editorSelect.innerHTML = "";
+    const blank = ttmMake("option", "— Select a TalkToMe tile —");
+    blank.value = "";
+    ttmAdd(editorSelect, blank);
 
     for (const doc of docs) {
-      const card = ttmMake("article", null, "ttm-tile-card");
-      const flags = doc.getFlag(TTM_ID, "speech") ?? {};
-      const name = flags.name || doc.name || "Speech Tile";
-      const subject = flags.subjectTokenId ? ttmTokenById(flags.subjectTokenId) : null;
-      const npc = flags.npcName || subject?.name || "Triggered/selected token";
-
-      card.innerHTML = `
-        <div>
-          <strong>${ttmEscapeHtml(name)}</strong>
-          <p class="notes">NPC: ${ttmEscapeHtml(npc)} · Trigger: ${ttmEscapeHtml(flags.trigger ?? "manual")}</p>
-        </div>
-      `;
-
-      const row = ttmMake("div", null, "ttm-card-buttons");
-
-      const trigger = ttmMake("button", "Trigger");
-      trigger.type = "button";
-      trigger.addEventListener("click", () => this.api.triggerSpeechTile(doc.id));
-
-      const select = ttmMake("button", "Select");
-      select.type = "button";
-      select.addEventListener("click", () => {
-        canvas.tiles?.activate?.();
-        const obj = canvas.tiles?.get(doc.id);
-        obj?.control?.({ releaseOthers: true });
-        canvas.animatePan?.({ x: doc.x + doc.width / 2, y: doc.y + doc.height / 2 });
-      });
-
-      const edit = ttmMake("button", "Edit");
-      edit.type = "button";
-      edit.addEventListener("click", () => canvas.tiles?.get(doc.id)?.sheet?.render(true));
-
-      const del = ttmMake("button", "Delete");
-      del.type = "button";
-      del.addEventListener("click", async () => {
-        const ok = await Dialog.confirm({
-          title: "Delete Speech Tile?",
-          content: `<p>Delete <strong>${ttmEscapeHtml(name)}</strong>?</p>`
-        });
-
-        if (ok) {
-          await doc.delete();
-          this.refreshManagedTileList();
-        }
-      });
-
-      ttmAdd(row, trigger);
-      ttmAdd(row, select);
-      ttmAdd(row, edit);
-      ttmAdd(row, del);
-      ttmAdd(card, row);
-      ttmAdd(list, card);
+      const utility = doc.getFlag(TTM_ID, "utility") ?? {};
+      const option = ttmMake(
+        "option",
+        `${doc.name ?? "Unnamed Tile"} [${utility.template ?? "speech"}]`
+      );
+      option.value = doc.id;
+      if (doc.id === selectedEditorId) option.selected = true;
+      ttmAdd(editorSelect, option);
     }
   }
+
+  if (!docs.length) {
+    list.innerHTML =
+      `<p class="notes">No TalkToMe tiles on this scene yet.</p>`;
+    return;
+  }
+
+  for (const doc of docs) {
+    const utility = doc.getFlag(TTM_ID, "utility") ?? {};
+    const speech = doc.getFlag(TTM_ID, "speech") ?? {};
+    const name = doc.name || speech.name || "TalkToMe Tile";
+    const template = utility.template ?? "speech";
+    const trigger = speech.trigger ?? utility.trigger ?? "manual";
+
+    const card = ttmMake("article", null, "ttm-tile-card");
+    card.innerHTML = `
+      <div>
+        <strong>${ttmEscapeHtml(name)}</strong>
+        <p class="notes">
+          Template: ${ttmEscapeHtml(template)}
+          · Trigger: ${ttmEscapeHtml(trigger)}
+        </p>
+      </div>
+    `;
+
+    const row = ttmMake("div", null, "ttm-card-buttons");
+
+    const triggerButton = ttmMake("button", "Trigger");
+    triggerButton.type = "button";
+    triggerButton.addEventListener(
+      "click",
+      () => this.api.triggerSpeechTile(doc.id)
+    );
+
+    const selectButton = ttmMake("button", "Select");
+    selectButton.type = "button";
+    selectButton.addEventListener("click", () => {
+      canvas.tiles?.activate?.();
+      canvas.tiles?.get(doc.id)?.control?.({ releaseOthers: true });
+      canvas.animatePan?.({
+        x: Number(doc.x ?? 0) + Number(doc.width ?? 0) / 2,
+        y: Number(doc.y ?? 0) + Number(doc.height ?? 0) / 2
+      });
+    });
+
+    const editButton = ttmMake("button", "Edit");
+    editButton.type = "button";
+    editButton.addEventListener("click", () => {
+      const useTalkToMeEditor = game.settings.get(
+        TTM_ID,
+        "useTalkToMeTileEditor"
+      );
+
+      if (useTalkToMeEditor) {
+        this.openTileEditor(doc.id);
+        return;
+      }
+
+      canvas.tiles?.get(doc.id)?.sheet?.render(true);
+    });
+
+    const deleteButton = ttmMake("button", "Delete");
+    deleteButton.type = "button";
+    deleteButton.addEventListener("click", async () => {
+      const ok = await Dialog.confirm({
+        title: "Delete TalkToMe Tile?",
+        content:
+          `<p>Delete <strong>${ttmEscapeHtml(name)}</strong>?</p>`
+      });
+
+      if (!ok) return;
+
+      await doc.delete();
+      this.refreshManagedTileList();
+    });
+
+    ttmAdd(row, triggerButton);
+    ttmAdd(row, selectButton);
+    ttmAdd(row, editButton);
+    ttmAdd(row, deleteButton);
+    ttmAdd(card, row);
+    ttmAdd(list, card);
+  }
+}
 
   startDrag(event) {
     if (!this.element) return;
