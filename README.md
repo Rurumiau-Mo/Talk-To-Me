@@ -55,6 +55,8 @@ Use the Trigger Tiles tab to place tiles that automatically trigger NPC dialogue
 
 #### Planned features include:
 
+Move Token Tile Template - Working on
+
 Better trigger tiles management
 
 Magic Traps
