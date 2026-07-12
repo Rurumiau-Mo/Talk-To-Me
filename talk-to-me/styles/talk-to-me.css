@@ -649,3 +649,155 @@
   padding-top: 0.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.15);
 }
+
+
+/* Movement route editor */
+#talk-to-me-window .ttm-route-picker-group,
+#talk-to-me-tile-editor-window .ttm-route-picker-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+  align-items: stretch;
+  padding: 0.65rem;
+  border: 1px solid rgba(120, 180, 255, 0.35);
+  border-radius: 6px;
+  background: rgba(20, 30, 45, 0.6);
+}
+
+#talk-to-me-window .ttm-route-picker-heading,
+#talk-to-me-tile-editor-window .ttm-route-picker-heading {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+#talk-to-me-window .ttm-route-picker-status,
+#talk-to-me-tile-editor-window .ttm-route-picker-status {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(255, 255, 255, 0.78);
+  text-align: center;
+  white-space: normal;
+}
+
+#talk-to-me-window .ttm-route-picker-status-ready,
+#talk-to-me-tile-editor-window .ttm-route-picker-status-ready {
+  color: #bfffd0;
+  background: rgba(34, 110, 58, 0.28);
+}
+
+#talk-to-me-window .ttm-route-action-button,
+#talk-to-me-tile-editor-window .ttm-route-action-button {
+  width: 100%;
+  min-width: 100%;
+  min-height: 40px;
+  height: auto;
+  padding: 0.55rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 100%;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: normal;
+  text-align: center;
+}
+
+#talk-to-me-window .ttm-route-clear-button:disabled,
+#talk-to-me-tile-editor-window .ttm-route-clear-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+
+/* Tile menu controls */
+#talk-to-me-window .ttm-tile-menu-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+#talk-to-me-window .ttm-wide-menu-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0.55rem 0.75rem;
+  white-space: normal;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Node editor */
+#talk-to-me-window [data-panel="nodes"] {
+  min-width: 0;
+}
+
+#talk-to-me-window .ttm-node-target-headings,
+#talk-to-me-window .ttm-node-target-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 86px;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+#talk-to-me-window .ttm-node-target-headings {
+  margin-top: 0.7rem;
+  padding: 0 0.25rem;
+}
+
+#talk-to-me-window .ttm-node-target-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.35rem 0 0.65rem;
+}
+
+#talk-to-me-window .ttm-node-target-row {
+  padding: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+#talk-to-me-window .ttm-node-target-row select,
+#talk-to-me-window .ttm-node-target-row input,
+#talk-to-me-window .ttm-node-target-row button {
+  width: 100%;
+  min-width: 0;
+}
+
+#talk-to-me-window .ttm-node-editor-button {
+  width: 100%;
+  min-height: 38px;
+  padding: 0.5rem 0.7rem;
+  white-space: normal;
+  font-weight: 700;
+}
+
+#talk-to-me-window .ttm-node-editor-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+@media (max-width: 620px) {
+  #talk-to-me-window .ttm-tile-menu-controls,
+  #talk-to-me-window .ttm-node-editor-actions {
+    grid-template-columns: 1fr;
+  }
+
+  #talk-to-me-window .ttm-node-target-headings {
+    display: none;
+  }
+
+  #talk-to-me-window .ttm-node-target-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -8,10 +8,38 @@ import { TTM_ID, TTM_TITLE, TTM_SOCKET_ACTIONS } from "./constants.js";
 import { ttmChosenToken, ttmNotice } from "./helpers.js";
 
 // Convert Foundry/RollTable HTML into plain readable speech text.
-function ttmStripHtml(value) {
+export function ttmNormaliseSpeechText(value) {
+  let source = String(value ?? "");
+
+  // Decode common HTML entities before parsing. Some Foundry editors
+  // return encoded paragraph tags rather than live HTML.
+  const decoder = document.createElement("textarea");
+  decoder.innerHTML = source;
+  source = decoder.value;
+
+  // Preserve paragraph and line-break separation as normal spaces.
+  source = source
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\s*\/\s*p\s*>/gi, "\n")
+    .replace(/<\s*p(?:\s[^>]*)?>/gi, "");
+
   const div = document.createElement("div");
-  div.innerHTML = String(value ?? "");
-  return (div.textContent || div.innerText || "").trim();
+  div.innerHTML = source;
+
+  let text = div.textContent || div.innerText || "";
+
+  // Clean malformed or already-stripped paragraph markers such as
+  // "/p", "<p", or "p>" that can leak from enriched table results.
+  text = text
+    .replace(/(?:^|\s)[<\[]?\/?p[>\]]?(?=\s|$)/gi, " ")
+    .replace(/\s*\/p\s*/gi, " ")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\s*\n\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return text;
 }
 
 // Find a RollTable using id, name, or the saved default setting.
@@ -60,7 +88,7 @@ export async function rollTable(table) {
       ?? "";
   }
 
-  return ttmStripHtml(text);
+  return ttmNormaliseSpeechText(text);
 }
 
 // Find a token by visible token name.
@@ -100,20 +128,127 @@ export function getTokenWorldBubblePosition(tokenLike) {
 }
 
 // Optional camera movement before speech appears.
-export async function panZoomToToken(tokenLike) {
-  const tok = resolveToken(tokenLike);
-  if (!tok) return;
+let temporaryPanState = null;
+let temporaryPanRestoreTimer = null;
 
-  const x = tok.center?.x ?? tok.document.x + (tok.document.width * canvas.grid.size) / 2;
-  const y = tok.center?.y ?? tok.document.y + (tok.document.height * canvas.grid.size) / 2;
-  const currentScale = canvas.stage?.scale?.x ?? 1;
+function getCurrentCanvasView() {
+  const pivot = canvas.stage?.pivot;
+  const scale = canvas.stage?.scale?.x;
+
+  if (
+    !Number.isFinite(Number(pivot?.x))
+    || !Number.isFinite(Number(pivot?.y))
+    || !Number.isFinite(Number(scale))
+  ) {
+    return null;
+  }
+
+  return {
+    x: Number(pivot.x),
+    y: Number(pivot.y),
+    scale: Number(scale)
+  };
+}
+
+function clearTemporaryPanRestoreTimer() {
+  if (!temporaryPanRestoreTimer) return;
+
+  window.clearTimeout(temporaryPanRestoreTimer);
+  temporaryPanRestoreTimer = null;
+}
+
+export async function restoreTemporarySpeakerPan() {
+  clearTemporaryPanRestoreTimer();
+
+  const originalView = temporaryPanState;
+  temporaryPanState = null;
+
+  if (!originalView || !canvas?.stage) return false;
+
+  await canvas.animatePan({
+    x: originalView.x,
+    y: originalView.y,
+    scale: originalView.scale,
+    duration: 450
+  });
+
+  return true;
+}
+
+function scheduleTemporaryPanRestore(holdDuration = 5500) {
+  clearTemporaryPanRestoreTimer();
+
+  temporaryPanRestoreTimer = window.setTimeout(
+    () => {
+      restoreTemporarySpeakerPan().catch(error => {
+        console.error(
+          "TalkToMe failed to restore the previous canvas view.",
+          error
+        );
+      });
+    },
+    Math.max(0, Number(holdDuration ?? 5500)) + 450
+  );
+}
+
+export async function panToWorldTemporarily({
+  x,
+  y,
+  duration = 450,
+  holdDuration = 5500
+} = {}) {
+  if (
+    !Number.isFinite(Number(x))
+    || !Number.isFinite(Number(y))
+    || !canvas?.stage
+  ) {
+    return false;
+  }
+
+  // Preserve the user's view from before the first speech line.
+  // Later lines refresh the timer without overwriting that baseline.
+  if (!temporaryPanState) {
+    temporaryPanState = getCurrentCanvasView();
+  }
+
+  const currentScale = Number(
+    canvas.stage?.scale?.x ?? 1
+  );
   const targetScale = Math.max(currentScale, 1.35);
 
-  try {
-    await canvas.animatePan({ x, y, scale: targetScale, duration: 450 });
-  } catch (err) {
-    await canvas.animatePan({ x, y, duration: 450 });
-  }
+  await canvas.animatePan({
+    x: Number(x),
+    y: Number(y),
+    scale: targetScale,
+    duration: Math.max(0, Number(duration ?? 450))
+  });
+
+  scheduleTemporaryPanRestore(holdDuration);
+  return true;
+}
+
+export async function panZoomToToken(
+  tokenLike,
+  holdDuration = 5500
+) {
+  const tok = resolveToken(tokenLike);
+  if (!tok) return false;
+
+  const x =
+    tok.center?.x
+    ?? tok.document.x
+      + (tok.document.width * canvas.grid.size) / 2;
+  const y =
+    tok.center?.y
+    ?? tok.document.y
+      + (tok.document.height * canvas.grid.size) / 2;
+
+  return panToWorldTemporarily({
+    x,
+    y,
+    duration: 450,
+    holdDuration
+  });
 }
 
 // Legacy fallback using Foundry's normal speech bubble system.

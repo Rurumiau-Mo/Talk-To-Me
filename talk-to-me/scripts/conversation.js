@@ -4,6 +4,7 @@
 // Runs simple conversation sequences and advanced node-based conversations.
 
 import { TTM_ID } from "./constants.js";
+import { ttmNormaliseSpeechText } from "./speech.js";
 
 // Advanced conversation state
 const CONVERSATION_FLAG = "conversationStates";
@@ -45,17 +46,20 @@ function parseHeader(text) {
 async function resultText(result) {
   if (!result) return "";
 
+  let text = "";
+
   if (typeof result.getChatText === "function") {
-    return String(await result.getChatText());
+    text = await result.getChatText();
+  } else {
+    text =
+      result.text
+      ?? result.name
+      ?? result.description
+      ?? result.document?.name
+      ?? "";
   }
 
-  return String(
-    result.text
-    ?? result.name
-    ?? result.description
-    ?? result.document?.name
-    ?? ""
-  );
+  return ttmNormaliseSpeechText(text);
 }
 
 function weightedChoice(entries) {
@@ -209,6 +213,47 @@ export function conversationResultSyntaxExample() {
 // Simple conversation playback
 const activeConversationSequences = new Set();
 
+function orderedTableResults(table) {
+  const results = Array.from(
+    table?.results?.contents
+    ?? table?.results
+    ?? []
+  );
+
+  // Embedded-document order is the RollTable's entry order.
+  // The index is retained as the final tie-breaker.
+  return results
+    .map((result, index) => ({ result, index }))
+    .sort((a, b) => {
+      const aSort = Number(a.result.sort);
+      const bSort = Number(b.result.sort);
+
+      if (
+        Number.isFinite(aSort)
+        && Number.isFinite(bSort)
+        && aSort !== bSort
+      ) {
+        return aSort - bSort;
+      }
+
+      return a.index - b.index;
+    })
+    .map(entry => entry.result);
+}
+
+async function nextOrderedTableText(table, cursors) {
+  const results = orderedTableResults(table);
+  if (!results.length) return "";
+
+  const cursor = Number(cursors.get(table.id) ?? 0);
+  const result = results[cursor];
+
+  if (!result) return "";
+
+  cursors.set(table.id, cursor + 1);
+  return resultText(result);
+}
+
 function sequenceKey(tileDoc) {
   return `${tileDoc.parent?.id ?? canvas.scene?.id}.${tileDoc.id}`;
 }
@@ -294,6 +339,7 @@ export async function playConversationSequence(
   });
 
   const usedTables = new Map();
+  const tableCursors = new Map();
 
   activeConversationSequences.add(key);
 
@@ -310,13 +356,16 @@ export async function playConversationSequence(
 
       usedTables.set(table.id, table);
 
-      // Draw from the exact table assigned to this order slot first.
-      // Passing the resulting text to say() prevents a second or wrong table draw.
-      const lineText = await api.rollTable(table);
+      // Read the next result in the RollTable's stored entry order.
+      // This ignores weight and random range selection for conversations.
+      const lineText = await nextOrderedTableText(
+        table,
+        tableCursors
+      );
 
       if (!lineText) {
         ui.notifications.warn(
-          `Conversation NPC ${step.slot}'s RollTable returned no text.`
+          `Conversation NPC ${step.slot}'s RollTable has no remaining entry in order.`
         );
         return false;
       }

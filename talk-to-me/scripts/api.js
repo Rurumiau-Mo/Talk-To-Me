@@ -11,6 +11,7 @@ import { ttmIsGM, ttmModuleActive, ttmNotice } from "./helpers.js";
 import { activateUtilityTemplate, applyUtilityTemplateActions,
   canActivateTileNow,
   runTeleportUtility,
+  runNodeGraph,
   toggleLightTile
 } from "./utilities.js";
 
@@ -45,6 +46,7 @@ import {
   getManagedSpeechTiles,
   pointInTile,
   tileContainsToken,
+  tokenCanActivateTile,
   triggerSpeechTile
 } from "./tiles.js";
 
@@ -383,8 +385,23 @@ previewTileMigration(tileId) {
       return null;
     }
 
-    const shouldZoom = zoomToSpeaker ?? game.settings.get(TTM_ID, "zoomToSpeakerByDefault");
-    if (resolvedToken && shouldZoom) await panZoomToToken(resolvedToken);
+    // Tile speech must opt in explicitly. A false checkbox must
+    // never fall back to the client default and pan unexpectedly.
+    const shouldZoom = zoomToSpeaker === true;
+    const bubbleDuration = Math.max(
+      0,
+      Number(
+        game.settings.get(TTM_ID, "bubbleDuration")
+        ?? 5500
+      )
+    );
+
+    if (resolvedToken && shouldZoom) {
+      await panZoomToToken(
+        resolvedToken,
+        bubbleDuration
+      );
+    }
 
     if (!resolvedToken && !npcName) {
       ttmNotice("warn", "TalkToMe: select/target a token or provide a custom NPC name.");
@@ -396,8 +413,24 @@ previewTileMigration(tileId) {
     if (resolvedToken) {
       if (useCustom) {
         const bubbleId = `${canvas.scene?.id}.${resolvedToken.document.id}.${Date.now()}`;
-        await sayCustomBubble(resolvedToken, finalText, npcName, null, bubbleId);
-        if (broadcast) await broadcastSpeech(resolvedToken, finalText, npcName, null, bubbleId, shouldZoom);
+        await sayCustomBubble(
+          resolvedToken,
+          finalText,
+          npcName,
+          bubbleDuration,
+          bubbleId
+        );
+
+        if (broadcast) {
+          await broadcastSpeech(
+            resolvedToken,
+            finalText,
+            npcName,
+            bubbleDuration,
+            bubbleId,
+            shouldZoom
+          );
+        }
       } else {
         await sayFoundryBubble(resolvedToken, finalText, bubbleOptions);
       }
@@ -470,6 +503,11 @@ async scanMovementTriggers({ primeOnly = false } = {}) {
       if (!token?.document) continue;
 
       const tokenDoc = token.document;
+
+      if (!tokenCanActivateTile(tileDoc, token)) {
+        continue;
+      }
+
       const tokenId = tokenDoc.id ?? tokenDoc._id;
       if (!tokenId) continue;
 
@@ -535,20 +573,41 @@ async triggerSpeechTileByCategory(tileId, category = "manual", tokenLike = null,
   if (!doc) return ttmNotice("warn", "Speech tile not found.");
 
   const utility = doc.getFlag(TTM_ID, "utility") ?? {};
-    if (utility.template === "teleport") {
-      await runTeleportUtility(doc, tokenLike ?? this.getTokenOverlappingTileDoc?.(doc, { debug: true }), { debug: true });
-    } else {
-      await applyUtilityTemplateActions(this, doc, tokenLike);
-    }
 
-    const flags = doc.getFlag(TTM_ID, "speech");
-  if (!flags?.managed) return ttmNotice("warn", "That tile is not a TalkToMe speech tile.");
+  if (utility.template && utility.template !== "speech") {
+    return applyUtilityTemplateActions(
+      this,
+      doc,
+      tokenLike
+    );
+  }
+
+  const flags = doc.getFlag(TTM_ID, "speech");
+  if (!flags?.managed) {
+    return ttmNotice(
+      "warn",
+      "That tile is not a TalkToMe managed tile."
+    );
+  }
 
   if (flags.trigger !== category && category !== "manual") {
     return ttmNotice("warn", `This speech tile is set to ${flags.trigger}, not ${category}.`);
   }
 
   return this.triggerSpeechTile(tileId, tokenLike, overrides);
+}
+
+async runNodeGraph(sourceTileLike, tokenLike = null) {
+  const sourceTileDoc =
+    typeof sourceTileLike === "string"
+      ? canvas.scene?.tiles?.get(sourceTileLike)
+      : sourceTileLike?.document ?? sourceTileLike;
+
+  if (!sourceTileDoc) {
+    return ttmNotice("warn", "Node graph source tile not found.");
+  }
+
+  return runNodeGraph(this, sourceTileDoc, tokenLike);
 }
 
 async checkEntryTriggersForToken() {
@@ -674,6 +733,33 @@ async handleRequestedTileTrigger(data = {}) {
 
   const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
   const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
+  const activatingToken = data.tokenId
+    ? canvas.tokens?.get(data.tokenId)
+    : null;
+
+  if (
+    activatingToken
+    && !tokenCanActivateTile(tileDoc, activatingToken)
+  ) {
+    return;
+  }
+
+  if (!activatingToken) {
+    const requestingUser = game.users?.get(data.userId);
+    const allowedTypes = Array.isArray(
+      utility.activationActorTypes
+    )
+      ? utility.activationActorTypes
+      : ["players", "npcs", "groups", "vehicles"];
+
+    if (
+      requestingUser
+      && !requestingUser.isGM
+      && !allowedTypes.includes("players")
+    ) {
+      return;
+    }
+  }
 
   const speechTrigger = speech.trigger ?? "manual";
   const template = utility.template ?? "speech";

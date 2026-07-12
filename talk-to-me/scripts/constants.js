@@ -8,8 +8,8 @@
 export const TTM_ID = "talk-to-me";
 export const TTM_TITLE = "TalkToMe";
 
-export const TTM_TILE_SCHEMA_VERSION = 7;
-export const TTM_WORLD_MIGRATION_VERSION = 7;
+export const TTM_TILE_SCHEMA_VERSION = 11;
+export const TTM_WORLD_MIGRATION_VERSION = 11;
 
 // Optional/recommended module ids.
 // These are not hard requirements. TalkToMe should still work without them.
