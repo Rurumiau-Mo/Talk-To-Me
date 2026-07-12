@@ -30,7 +30,8 @@ import { lightManager } from "./light-manager.js";
 import {
   applyUtilityTemplateActions,
   canActivateTileNow,
-  runTeleportUtility
+  runTeleportUtility,
+  runNodeGraph
 } from "./utilities.js";
 
 export const TTM_MOVEMENT_TRIGGERS = ["enter", "exit"];
@@ -101,19 +102,136 @@ export function rectsOverlap(a, b) {
     && a.top <= b.bottom;
 }
 
-export function tileContainsToken(tileDoc, tokenDoc) {
-  return rectsOverlap(getTileRect(tileDoc), getTokenRect(tokenDoc));
+function getRenderedTilePlaceable(tileDoc) {
+  if (!tileDoc) return null;
+
+  return tileDoc.object
+    ?? canvas.tiles?.get?.(tileDoc.id)
+    ?? canvas.tiles?.placeables?.find(
+      tile => tile.document?.id === tileDoc.id
+    )
+    ?? null;
+}
+
+export function getTileImageCenter(tileDoc) {
+  const placeable = getRenderedTilePlaceable(tileDoc);
+
+  // Foundry maintains the rendered centre correctly when a Tile is
+  // resized, scaled, rotated, or repositioned on the canvas.
+  if (
+    Number.isFinite(Number(placeable?.center?.x))
+    && Number.isFinite(Number(placeable?.center?.y))
+  ) {
+    return {
+      x: Number(placeable.center.x),
+      y: Number(placeable.center.y)
+    };
+  }
+
+  const bounds = placeable?.bounds;
+  if (
+    Number.isFinite(Number(bounds?.x))
+    && Number.isFinite(Number(bounds?.y))
+    && Number.isFinite(Number(bounds?.width))
+    && Number.isFinite(Number(bounds?.height))
+  ) {
+    return {
+      x: Number(bounds.x) + Number(bounds.width) / 2,
+      y: Number(bounds.y) + Number(bounds.height) / 2
+    };
+  }
+
+  const x = Number(tileDoc?.x ?? 0);
+  const y = Number(tileDoc?.y ?? 0);
+  const width = Math.abs(Number(tileDoc?.width ?? 0));
+  const height = Math.abs(Number(tileDoc?.height ?? 0));
+
+  return {
+    x: x + width / 2,
+    y: y + height / 2
+  };
+}
+
+function getTileImageDimensions(tileDoc) {
+  const placeable = getRenderedTilePlaceable(tileDoc);
+  const documentWidth = Math.abs(
+    Number(placeable?.document?.width ?? tileDoc?.width ?? 0)
+  );
+  const documentHeight = Math.abs(
+    Number(placeable?.document?.height ?? tileDoc?.height ?? 0)
+  );
+
+  return {
+    width: documentWidth,
+    height: documentHeight
+  };
+}
+
+export function getTokenCenter(tokenDoc) {
+  const rect = getTokenRect(tokenDoc);
+
+  return {
+    x: rect.left + (rect.right - rect.left) / 2,
+    y: rect.top + (rect.bottom - rect.top) / 2
+  };
 }
 
 export function pointInTile(tileDoc, point) {
   if (!tileDoc || !point) return false;
 
-  const rect = getTileRect(tileDoc);
+  const center = getTileImageCenter(tileDoc);
+  const dimensions = getTileImageDimensions(tileDoc);
+  const halfWidth = dimensions.width / 2;
+  const halfHeight = dimensions.height / 2;
+  const rotation =
+    Number(tileDoc.rotation ?? tileDoc.texture?.rotation ?? 0)
+    * Math.PI
+    / 180;
 
-  return point.x >= rect.left
-    && point.x <= rect.right
-    && point.y >= rect.top
-    && point.y <= rect.bottom;
+  const dx = Number(point.x) - center.x;
+  const dy = Number(point.y) - center.y;
+
+  // Rotate the world point back into the tile image's local axes.
+  const localX =
+    dx * Math.cos(rotation) + dy * Math.sin(rotation);
+  const localY =
+    -dx * Math.sin(rotation) + dy * Math.cos(rotation);
+
+  return Math.abs(localX) <= halfWidth
+    && Math.abs(localY) <= halfHeight;
+}
+
+export function getTokenActivationCategory(tokenLike) {
+  const token =
+    tokenLike?.document
+      ? tokenLike
+      : tokenLike?.object ?? tokenLike;
+  const actor = token?.actor ?? token?.document?.actor;
+
+  if (!actor) return "npcs";
+  if (actor.hasPlayerOwner === true) return "players";
+
+  const actorType = String(actor.type ?? "").toLowerCase();
+
+  if (actorType === "vehicle") return "vehicles";
+  if (actorType === "group") return "groups";
+  return "npcs";
+}
+
+export function tokenCanActivateTile(tileDoc, tokenLike) {
+  const utility = tileDoc?.getFlag(TTM_ID, "utility") ?? {};
+  const allowed = Array.isArray(utility.activationActorTypes)
+    ? utility.activationActorTypes
+    : ["players", "npcs", "groups", "vehicles"];
+
+  return allowed.includes(
+    getTokenActivationCategory(tokenLike)
+  );
+}
+
+export function tileContainsToken(tileDoc, tokenDoc) {
+  // Entry activation occurs when the token centre reaches the image.
+  return pointInTile(tileDoc, getTokenCenter(tokenDoc));
 }
 
 export function templateLabel(template = "speech", trigger = "enter") {
@@ -124,6 +242,7 @@ export function templateLabel(template = "speech", trigger = "enter") {
     globalLight: "Global Lighting",
     trap: "Trap Activation",
     teleport: "Teleport Activation",
+    moveTokens: "Move Tokens",
     reset: "Create Reset Tile"
   };
 
@@ -372,6 +491,12 @@ export async function createSpeechTile({
   activationCooldownEnabled = false,
   activationCooldownSeconds = 1,
   multipleUse = true,
+  activationActorTypes = [
+    "players",
+    "npcs",
+    "groups",
+    "vehicles"
+  ],
   width = 200,
   height = 200,
   clickActivation = "left",
@@ -397,6 +522,15 @@ export async function createSpeechTile({
   saveDC = 10,
   trapTarget = "triggering-token",
   linkedTriggerTileId = "",
+  moveDestinationX = "",
+  moveDestinationY = "",
+  moveRoute = [],
+  moveTargetMode = "triggering-token",
+  moveTokenIds = [],
+  moveOffsetX = 0,
+  moveOffsetY = 0,
+  moveSpacing = 100,
+  moveAutoRotate = false,
   teleportSwitchX = "",
   teleportSwitchY = "",
   teleportX = "",
@@ -490,6 +624,17 @@ export async function createSpeechTile({
         saveDC,
         trapTarget,
         linkedTriggerTileId,
+        moveDestinationX,
+        moveDestinationY,
+        moveRoute: Array.isArray(moveRoute) ? moveRoute : [],
+        moveTargetMode,
+        moveTokenIds: Array.isArray(moveTokenIds)
+          ? moveTokenIds
+          : [],
+        moveOffsetX: Number(moveOffsetX ?? 0),
+        moveOffsetY: Number(moveOffsetY ?? 0),
+        moveSpacing: Math.max(0, Number(moveSpacing ?? 100)),
+        moveAutoRotate,
         teleportSwitchX,
         teleportSwitchY,
         teleportX,
@@ -514,6 +659,11 @@ export async function createSpeechTile({
           Number(activationCooldownSeconds || 1)
         ),
         multipleUse,
+        activationActorTypes: Array.isArray(
+          activationActorTypes
+        )
+          ? activationActorTypes
+          : ["players", "npcs", "groups", "vehicles"],
         usedOnce: false,
         originalState: {
           active: false,
@@ -533,6 +683,17 @@ export async function createSpeechTile({
           globalLightColorOverride,
           globalLightColor,
           globalLightUseFoundryFade: true,
+          moveDestinationX,
+          moveDestinationY,
+          moveRoute: Array.isArray(moveRoute) ? moveRoute : [],
+          moveTargetMode,
+          moveTokenIds: Array.isArray(moveTokenIds)
+            ? moveTokenIds
+            : [],
+          moveOffsetX: Number(moveOffsetX ?? 0),
+          moveOffsetY: Number(moveOffsetY ?? 0),
+          moveSpacing: Math.max(0, Number(moveSpacing ?? 100)),
+          moveAutoRotate,
           teleportX,
           teleportY,
           teleportOffsetX,
@@ -547,7 +708,12 @@ export async function createSpeechTile({
             0.2,
             Number(activationCooldownSeconds || 1)
           ),
-          multipleUse
+          multipleUse,
+          activationActorTypes: Array.isArray(
+            activationActorTypes
+          )
+            ? activationActorTypes
+            : ["players", "npcs", "groups", "vehicles"]
         }
       }),
       speech: {
@@ -687,12 +853,18 @@ export async function triggerSpeechTile(api, tileId, tokenLike = null, overrides
   if (!flags) return ttmNotice("warn", "That tile is not a TalkToMe speech tile.");
 
   if (flags.conversationSequenceEnabled === true) {
-    return playConversationSequence(
+    const result = await playConversationSequence(
       api,
       doc,
       flags,
       resolveToken(tokenLike)
     );
+
+    if (result !== false) {
+      await runNodeGraph(api, doc, tokenLike);
+    }
+
+    return result;
   }
 
   const table = flags.tableId ? game.tables.get(flags.tableId) : null;
@@ -719,4 +891,7 @@ export async function triggerSpeechTile(api, tileId, tokenLike = null, overrides
     postChat: overrides.postChat ?? flags.postChat,
     zoomToSpeaker: overrides.zoomToSpeaker ?? flags.zoomToSpeaker
   });
+
+  await runNodeGraph(api, doc, tokenLike);
+  return true;
 }

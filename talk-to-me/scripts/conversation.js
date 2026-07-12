@@ -4,6 +4,7 @@
 // Runs simple conversation sequences and advanced node-based conversations.
 
 import { TTM_ID } from "./constants.js";
+import { ttmNormaliseSpeechText } from "./speech.js";
 
 // Advanced conversation state
 const CONVERSATION_FLAG = "conversationStates";
@@ -45,17 +46,20 @@ function parseHeader(text) {
 async function resultText(result) {
   if (!result) return "";
 
+  let text = "";
+
   if (typeof result.getChatText === "function") {
-    return String(await result.getChatText());
+    text = await result.getChatText();
+  } else {
+    text =
+      result.text
+      ?? result.name
+      ?? result.description
+      ?? result.document?.name
+      ?? "";
   }
 
-  return String(
-    result.text
-    ?? result.name
-    ?? result.description
-    ?? result.document?.name
-    ?? ""
-  );
+  return ttmNormaliseSpeechText(text);
 }
 
 function weightedChoice(entries) {

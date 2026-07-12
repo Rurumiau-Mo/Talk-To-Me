@@ -9,6 +9,9 @@ import { migrateScene } from "./migration.js";
 import {
   synchroniseExternalGlobalLightingChange
 } from "./utilities.js";
+import {
+  panToWorldTemporarily
+} from "./speech.js";
 
 
 // Visibility refresh state
@@ -211,11 +214,25 @@ Hooks.on("canvasReady", async () => {
   });
 }
 
-function panClientToWorld(data) {
-  if (!data?.world) return;
-  const currentScale = canvas.stage?.scale?.x ?? 1;
-  const targetScale = Math.max(currentScale, 1.35);
-  canvas.animatePan({ x: data.world.x, y: data.world.y, scale: targetScale, duration: data.duration ?? 450 });
+async function panClientToWorld(data) {
+  if (!data?.world) return false;
+
+  const bubbleDuration = Math.max(
+    0,
+    Number(
+      data.bubbleDuration
+      ?? data.duration
+      ?? game.settings.get(TTM_ID, "bubbleDuration")
+      ?? 5500
+    )
+  );
+
+  return panToWorldTemporarily({
+    x: data.world.x,
+    y: data.world.y,
+    duration: 450,
+    holdDuration: bubbleDuration
+  });
 }
 
 export function registerSocket() {
@@ -224,7 +241,9 @@ export function registerSocket() {
     if (data.sceneId && data.sceneId !== canvas.scene?.id) return;
 
     if (data.action === TTM_SOCKET_ACTIONS.SPEECH) {
-      if (data.zoomToSpeaker) panClientToWorld(data);
+      if (data.zoomToSpeaker) {
+        await panClientToWorld(data);
+      }
       game.talkToMe?.bubbles?.show?.(data);
       return;
     }

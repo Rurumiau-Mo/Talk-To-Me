@@ -22,6 +22,7 @@ export const TTM_TEMPLATES = {
   GLOBAL_LIGHT: "globalLight",
   TRAP: "trap",
   TELEPORT: "teleport",
+  MOVE_TOKENS: "moveTokens",
   RESET: "reset"
 };
 
@@ -540,58 +541,93 @@ export async function teleportToken(tileDoc, tokenLike = null) {
   const destination = getTeleportDestination(flags);
 
   if (!destination) {
-    ui.notifications.warn("TalkToMe teleport destination X/Y is missing.");
+    ui.notifications.warn(
+      "TalkToMe teleport destination X/Y is missing."
+    );
     return false;
   }
 
   const token = findTeleportToken(tileDoc, tokenLike);
 
   if (!token?.document) {
-    ui.notifications.warn("TalkToMe teleport fired, but no token is selected or overlapping the teleport tile.");
+    ui.notifications.warn(
+      "TalkToMe teleport fired, but no triggering token "
+      + "was found on the tile image."
+    );
     return false;
   }
 
   const tokenDoc = token.document;
+
+  if (isTeleportOnCooldown(tileDoc, tokenDoc, flags)) {
+    return false;
+  }
+
   const bounds = getTokenBounds(tokenDoc);
   const offsetX = Number(flags.teleportOffsetX ?? 0);
   const offsetY = Number(flags.teleportOffsetY ?? 0);
 
-  let newX = Math.round(destination.x + offsetX - bounds.width / 2);
-  let newY = Math.round(destination.y + offsetY - bounds.height / 2);
+  let newX = Math.round(
+    destination.x + offsetX - bounds.width / 2
+  );
+  let newY = Math.round(
+    destination.y + offsetY - bounds.height / 2
+  );
 
   if (flags.teleportAvoidTiles !== false) {
-    const safeLanding = findSafeTeleportLanding(tileDoc, newX, newY, bounds.width, bounds.height);
+    const safeLanding = findSafeTeleportLanding(
+      tileDoc,
+      newX,
+      newY,
+      bounds.width,
+      bounds.height
+    );
+
     newX = safeLanding.x;
     newY = safeLanding.y;
   }
 
+  const update = {
+    x: newX,
+    y: newY
+  };
+
+  const cooldownSeconds = Number(
+    flags.teleportCooldownSeconds ?? 0
+  );
+
+  if (
+    flags.teleportUseCooldown
+    && Number.isFinite(cooldownSeconds)
+    && cooldownSeconds > 0
+  ) {
+    update[`flags.${TTM_ID}.teleportCooldownUntil`] =
+      Date.now() + cooldownSeconds * 1000;
+  }
+
   setTeleportCooldown(tileDoc, tokenDoc, flags);
 
-  const tokenData = foundry.utils.deepClone(tokenDoc.toObject());
-  delete tokenData._id;
-  tokenData.x = newX;
-  tokenData.y = newY;
-
-  const cooldownSeconds = Number(flags.teleportCooldownSeconds ?? 0);
-  if (flags.teleportUseCooldown && Number.isFinite(cooldownSeconds) && cooldownSeconds > 0) {
-    foundry.utils.setProperty(tokenData, `flags.${TTM_ID}.teleportCooldownUntil`, Date.now() + cooldownSeconds * 1000);
-  }
-
-  await tokenDoc.delete();
-
-  const [newTokenDoc] = await canvas.scene.createEmbeddedDocuments("Token", [tokenData]);
-
-  if (newTokenDoc) {
-    canvas.tokens?.get(newTokenDoc.id)?.control?.({ releaseOthers: true });
-  }
+  // Preserve the token ID, ownership, targeting, vision, and actor link.
+  // The active GM performs this document update for player-owned tokens.
+  await tokenDoc.update(
+    update,
+    {
+      animate: false,
+      teleport: true,
+      talkToMeTeleport: true
+    }
+  );
 
   await markTeleportTileActivated(tileDoc);
 
-  ui.notifications.info(`TalkToMe teleported ${tokenDoc.name ?? "token"} to ${destination.x + offsetX}, ${destination.y + offsetY}.`);
+  if (game.user?.isGM) {
+    ui.notifications.info(
+      `TalkToMe teleported ${tokenDoc.name ?? "token"}.`
+    );
+  }
 
   return true;
 }
-
 
 export async function resetAllUtilityTiles() {
   return resetAllTalkToMeTiles();
@@ -617,11 +653,6 @@ export async function activateUtilityTemplate(tileDoc, tokenLike = null, overrid
   if (utility.template === TTM_TEMPLATES.TRAP) return activateTrapTile(tileDoc, tokenLike);
   if (utility.template === TTM_TEMPLATES.TELEPORT) return teleportToken(tileDoc, tokenLike);
   if (utility.template === TTM_TEMPLATES.RESET) return activateResetTile(tileDoc);
-
-  if (flags.template === TTM_TEMPLATES.TELEPORT) {
-    await runTeleportUtility(tileDoc, tokenLike, { debug: true });
-    return true;
-  }
 
   return false;
 }
@@ -905,6 +936,120 @@ export async function markTeleportTileActivated(tileDoc) {
 
 
 // Utility action dispatcher
+const activeNodeGraphs = new Set();
+
+function nodeGraphKey(tileDoc) {
+  return `${tileDoc?.parent?.id ?? canvas.scene?.id ?? "scene"}.${tileDoc?.id ?? "tile"}`;
+}
+
+export async function runNodeGraph(
+  api,
+  sourceTileDoc,
+  tokenLike = null,
+  visited = new Set()
+) {
+  if (!api || !sourceTileDoc) return false;
+
+  const graph =
+    sourceTileDoc.getFlag(TTM_ID, "nodeGraph") ?? {};
+
+  if (
+    graph.enabled !== true
+    || !Array.isArray(graph.targets)
+    || graph.targets.length === 0
+  ) {
+    return false;
+  }
+
+  const sourceKey = nodeGraphKey(sourceTileDoc);
+
+  if (
+    activeNodeGraphs.has(sourceKey)
+    || visited.has(sourceKey)
+  ) {
+    console.warn(
+      "TalkToMe prevented a circular node graph.",
+      sourceTileDoc.name
+    );
+    return false;
+  }
+
+  activeNodeGraphs.add(sourceKey);
+  visited.add(sourceKey);
+
+  const runTarget = async target => {
+    const delayMs = Math.max(
+      0,
+      Number(target?.delay ?? 0) * 1000
+    );
+
+    if (delayMs > 0) {
+      await new Promise(resolve =>
+        window.setTimeout(resolve, delayMs)
+      );
+    }
+
+    const targetDoc = canvas.scene?.tiles?.get(
+      target?.tileId
+    );
+
+    if (!targetDoc) {
+      console.warn(
+        "TalkToMe node target was not found.",
+        target?.tileId
+      );
+      return false;
+    }
+
+    const targetKey = nodeGraphKey(targetDoc);
+    if (visited.has(targetKey)) {
+      console.warn(
+        "TalkToMe skipped a circular node target.",
+        targetDoc.name
+      );
+      return false;
+    }
+
+    const result = await api.triggerSpeechTileByCategory(
+      targetDoc.id,
+      "manual",
+      tokenLike,
+      {
+        nodeGraphActivation: true,
+        nodeGraphVisited: new Set(visited)
+      }
+    );
+
+    return result !== false;
+  };
+
+  try {
+    if (graph.mode === "parallel") {
+      await Promise.all(graph.targets.map(runTarget));
+    } else {
+      for (const target of graph.targets) {
+        await runTarget(target);
+      }
+    }
+
+    return true;
+  } finally {
+    activeNodeGraphs.delete(sourceKey);
+  }
+}
+
+async function finishUtilityActivation(
+  api,
+  tileDoc,
+  tokenLike,
+  result = true
+) {
+  if (result === false) return false;
+
+  await runNodeGraph(api, tileDoc, tokenLike);
+  return result;
+}
+
 export async function applyUtilityTemplateActions(api, tileDoc, tokenLike = null) {
   const flags = getUtilityFlags(tileDoc);
 
@@ -916,34 +1061,51 @@ export async function applyUtilityTemplateActions(api, tileDoc, tokenLike = null
   if (flags.template === TTM_TEMPLATES.SWITCH) {
     await toggleSwitchTile(tileDoc);
     await triggerLinkedTalkToMeTile(api, tileDoc, tokenLike);
-    return true;
+    return finishUtilityActivation(api, tileDoc, tokenLike);
   }
 
   if (flags.template === TTM_TEMPLATES.LIGHT) {
     await toggleLightTile(tileDoc);
-    return true;
+    return finishUtilityActivation(api, tileDoc, tokenLike);
   }
 
   if (flags.template === TTM_TEMPLATES.GLOBAL_LIGHT) {
     await activateGlobalLightingTile(tileDoc);
-    return true;
+    return finishUtilityActivation(api, tileDoc, tokenLike);
   }
 
   if (flags.template === TTM_TEMPLATES.TRAP) {
     await triggerTrapTile(tileDoc, tokenLike);
     await triggerLinkedTalkToMeTile(api, tileDoc, tokenLike);
-    return true;
+    return finishUtilityActivation(api, tileDoc, tokenLike);
   }
 
   if (flags.template === TTM_TEMPLATES.TELEPORT) {
-    await markTeleportTileActivated(tileDoc);
-    await triggerTeleportTile(tileDoc, tokenLike);
-    return true;
+    const result = await teleportToken(tileDoc, tokenLike);
+    return finishUtilityActivation(
+      api,
+      tileDoc,
+      tokenLike,
+      result
+    );
+  }
+
+  if (flags.template === TTM_TEMPLATES.MOVE_TOKENS) {
+    const result = await moveTokensToDestination(
+      tileDoc,
+      tokenLike
+    );
+    return finishUtilityActivation(
+      api,
+      tileDoc,
+      tokenLike,
+      result
+    );
   }
 
   if (flags.template === TTM_TEMPLATES.RESET) {
     await activateResetTile(tileDoc);
-    return true;
+    return finishUtilityActivation(api, tileDoc, tokenLike);
   }
 
   return false;
@@ -953,6 +1115,201 @@ export async function applyUtilityTemplateActions(api, tileDoc, tokenLike = null
 
 
 
+
+// Animated token movement
+function resolveMoveTargetTokens(tileDoc, tokenLike, flags) {
+  const mode = flags.moveTargetMode ?? "triggering-token";
+  const supplied =
+    tokenLike?.document
+      ? tokenLike
+      : tokenLike?.object ?? tokenLike;
+
+  if (mode === "triggering-token") {
+    return supplied?.document
+      ? [supplied]
+      : findTeleportToken(tileDoc, tokenLike)
+        ? [findTeleportToken(tileDoc, tokenLike)]
+        : [];
+  }
+
+  if (mode === "tokens-within-tile") {
+    const tileBounds = getTileBounds(tileDoc);
+    return (canvas.tokens?.placeables ?? []).filter(token => {
+      return boundsOverlap(
+        getTokenBounds(token),
+        tileBounds
+      );
+    });
+  }
+
+  if (mode === "selected-tokens") {
+    return Array.from(canvas.tokens?.controlled ?? []);
+  }
+
+  if (mode === "specific-npcs") {
+    const tokenIds = Array.isArray(flags.moveTokenIds)
+      ? flags.moveTokenIds
+      : [];
+
+    return tokenIds
+      .map(tokenId => canvas.tokens?.get(tokenId))
+      .filter(token => token?.document);
+  }
+
+  if (mode === "player-tokens") {
+    return (canvas.tokens?.placeables ?? []).filter(token => {
+      const actor = token.actor;
+      return actor?.hasPlayerOwner === true;
+    });
+  }
+
+  return [];
+}
+
+function moveFormationOffset(index, count, spacing) {
+  if (count <= 1) return { x: 0, y: 0 };
+
+  const columns = Math.ceil(Math.sqrt(count));
+  const row = Math.floor(index / columns);
+  const column = index % columns;
+  const rows = Math.ceil(count / columns);
+
+  return {
+    x: (column - (columns - 1) / 2) * spacing,
+    y: (row - (rows - 1) / 2) * spacing
+  };
+}
+
+export async function moveTokensToDestination(
+  tileDoc,
+  tokenLike = null
+) {
+  const flags = getUtilityFlags(tileDoc);
+  const savedRoute = Array.isArray(flags.moveRoute)
+    ? flags.moveRoute
+        .map(point => ({
+          x: Number(point?.x),
+          y: Number(point?.y)
+        }))
+        .filter(point =>
+          Number.isFinite(point.x)
+          && Number.isFinite(point.y)
+        )
+    : [];
+
+  const fallbackX = Number(flags.moveDestinationX);
+  const fallbackY = Number(flags.moveDestinationY);
+  const baseRoute = savedRoute.length
+    ? savedRoute
+    : (
+        Number.isFinite(fallbackX)
+        && Number.isFinite(fallbackY)
+          ? [{ x: fallbackX, y: fallbackY }]
+          : []
+      );
+
+  if (!baseRoute.length) {
+    ui.notifications.warn(
+      "TalkToMe Move Tokens route is missing."
+    );
+    return false;
+  }
+
+  const targets = resolveMoveTargetTokens(
+    tileDoc,
+    tokenLike,
+    flags
+  );
+
+  if (!targets.length) {
+    ui.notifications.warn(
+      "TalkToMe could not find any tokens to move."
+    );
+    return false;
+  }
+
+  const gridSize =
+    canvas.grid?.size
+    ?? canvas.scene?.grid?.size
+    ?? 100;
+  const spacing = Math.max(
+    0,
+    Number(flags.moveSpacing ?? gridSize)
+  );
+  const offsetX = Number(flags.moveOffsetX ?? 0);
+  const offsetY = Number(flags.moveOffsetY ?? 0);
+
+  const movements = targets.map(async (token, index) => {
+    const tokenDoc = token.document ?? token;
+    const bounds = getTokenBounds(tokenDoc);
+    const formation = moveFormationOffset(
+      index,
+      targets.length,
+      spacing
+    );
+
+    const waypoints = baseRoute.map((point, pointIndex) => ({
+      x: Math.round(
+        point.x
+        + offsetX
+        + formation.x
+        - bounds.width / 2
+      ),
+      y: Math.round(
+        point.y
+        + offsetY
+        + formation.y
+        - bounds.height / 2
+      ),
+      explicit: true,
+      checkpoint: pointIndex < baseRoute.length - 1
+    }));
+
+    // Foundry v14 TokenDocument.move accepts multiple waypoints,
+    // performs constrained movement, and can show the native ruler.
+    if (typeof tokenDoc.move === "function") {
+      return tokenDoc.move(
+        waypoints,
+        {
+          showRuler: true,
+          autoRotate: flags.moveAutoRotate === true,
+          talkToMeMoveTokens: true
+        }
+      );
+    }
+
+    // Compatibility fallback for builds without TokenDocument.move.
+    for (const waypoint of waypoints) {
+      await tokenDoc.update(
+        {
+          x: waypoint.x,
+          y: waypoint.y
+        },
+        {
+          animate: true,
+          talkToMeMoveTokens: true
+        }
+      );
+    }
+
+    return true;
+  });
+
+  const results = await Promise.all(movements);
+  const completed = results.some(result => result !== false);
+
+  if (!completed) return false;
+
+  const activeImage = flags.activeImage;
+  const update = {
+    [`flags.${TTM_ID}.utility.active`]: true
+  };
+
+  if (activeImage) update["texture.src"] = activeImage;
+  await tileDoc.update(update);
+
+  return true;
+}
 
 export function getTeleportDestination(flags) {
   const x = Number(flags.teleportX);
@@ -1207,6 +1564,15 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
     "globalLightColorOverride",
     "globalLightColor",
     "globalLightUseFoundryFade",
+    "moveDestinationX",
+    "moveDestinationY",
+    "moveRoute",
+    "moveTargetMode",
+    "moveTokenIds",
+    "moveOffsetX",
+    "moveOffsetY",
+    "moveSpacing",
+    "moveAutoRotate",
     "teleportX",
     "teleportY",
     "teleportOffsetX",
@@ -1218,7 +1584,8 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
     "hideBehindWalls",
     "activationCooldownEnabled",
     "activationCooldownSeconds",
-    "multipleUse"
+    "multipleUse",
+    "activationActorTypes"
   ]) {
     if (Object.hasOwn(original, key)) {
       updates[`flags.${TTM_ID}.utility.${key}`] = original[key];

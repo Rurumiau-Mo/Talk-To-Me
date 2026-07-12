@@ -146,7 +146,12 @@ export class TalkToMeApp {
 
     const nav = ttmMake("nav", null, "ttm-tabs sheet-tabs tabs");
 
-    for (const [id, label] of [["speech", "Speech"], ["tiles", "Trigger Tiles"], ["macros", "Macros"]]) {
+    for (const [id, label] of [
+      ["speech", "Speech"],
+      ["tiles", "Trigger Tiles"],
+      ["nodes", "Node Editor"],
+      ["macros", "Macros"]
+    ]) {
       const button = ttmMake("button", label, `ttm-tab ${id === this.activeTab ? "active" : ""}`);
       button.type = "button";
       button.dataset.tab = id;
@@ -159,6 +164,7 @@ export class TalkToMeApp {
     const panels = ttmMake("div", null, "ttm-panels");
     ttmAdd(panels, this.createSpeechPanel());
     ttmAdd(panels, this.createTilesPanel());
+    ttmAdd(panels, this.createNodeEditorPanel());
     ttmAdd(panels, this.createMacrosPanel());
     ttmAdd(body, panels);
 
@@ -225,6 +231,42 @@ export class TalkToMeApp {
 
     return select;
   }
+
+createTokenMultiSelect(id) {
+  const select = ttmMake("select");
+  select.id = id;
+  select.multiple = true;
+  select.size = 6;
+
+  for (const token of ttmSceneTokens()) {
+    const option = ttmMake("option", token.name);
+    option.value = token.document.id;
+    ttmAdd(select, option);
+  }
+
+  return select;
+}
+
+createActivationAudienceSelect(id) {
+  const select = ttmMake("select");
+  select.id = id;
+  select.multiple = true;
+  select.size = 4;
+
+  for (const [value, label] of [
+    ["players", "Players"],
+    ["npcs", "NPCs"],
+    ["groups", "Groups"],
+    ["vehicles", "Vehicles"]
+  ]) {
+    const option = ttmMake("option", label);
+    option.value = value;
+    option.selected = true;
+    ttmAdd(select, option);
+  }
+
+  return select;
+}
 
 createImagePickerField(labelText, input) {
   const group = ttmMake("div", null, "form-group ttm-image-picker-group");
@@ -429,7 +471,11 @@ toggleSwitchClickActivation() {
     npcName.placeholder = "Optional NPC name for chat speaker";
 
     const postChat = this.createCheckbox("ttm-speech-post-chat", "Also post to chat", game.settings.get(TTM_ID, "postChatByDefault"));
-    const zoomToSpeaker = this.createCheckbox("ttm-speech-zoom", "Pan/zoom to speaker", game.settings.get(TTM_ID, "zoomToSpeakerByDefault"));
+    const zoomToSpeaker = this.createCheckbox(
+      "ttm-speech-zoom",
+      "Pan/zoom to speaker",
+      false
+    );
 
     const buttons = ttmMake("div", null, "ttm-button-row");
 
@@ -476,7 +522,7 @@ toggleSwitchClickActivation() {
     ttmAdd(panel, this.createHint("Pick a token from the scene, or leave it on auto and select/target a token on the canvas."));
     ttmAdd(panel, tokenName);
     ttmAdd(panel, this.createField("Token", tokenSelect));
-    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "globalLight", "trap", "teleport", "reset"]));
+    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"]));
     ttmAdd(panel, this.createField("Custom speech", textArea));
     ttmAdd(panel, this.createField("Custom NPC name", npcName));
     ttmAdd(panel, postChat.label);
@@ -928,6 +974,473 @@ createCoordinatePickerField(labelText, xInput, yInput) {
   return group;
 }
 
+createMovementRoutePickerField(labelText, routeInput) {
+  const group = ttmMake(
+    "div",
+    null,
+    "form-group ttm-route-picker-group"
+  );
+  const heading = ttmMake(
+    "div",
+    labelText,
+    "ttm-route-picker-heading"
+  );
+  const status = ttmMake(
+    "div",
+    "No route plotted",
+    "ttm-route-picker-status"
+  );
+  const plot = ttmMake(
+    "button",
+    "📏 Plot Movement Route",
+    "ttm-route-action-button ttm-route-plot-button"
+  );
+  const clear = ttmMake(
+    "button",
+    "🗑 Clear Route",
+    "ttm-route-action-button ttm-route-clear-button"
+  );
+
+  plot.type = "button";
+  clear.type = "button";
+
+  const readRoute = () => {
+    try {
+      const route = JSON.parse(routeInput.value || "[]");
+
+      return Array.isArray(route)
+        ? route
+            .map(point => ({
+              x: Number(point?.x),
+              y: Number(point?.y)
+            }))
+            .filter(point =>
+              Number.isFinite(point.x)
+              && Number.isFinite(point.y)
+            )
+        : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const measureRoute = route => {
+    if (route.length < 2) return 0;
+
+    const gridSize =
+      Number(canvas.grid?.size)
+      || Number(canvas.scene?.grid?.size)
+      || 100;
+    const gridDistance =
+      Number(canvas.scene?.grid?.distance)
+      || 5;
+
+    let pixels = 0;
+
+    for (let index = 1; index < route.length; index += 1) {
+      pixels += Math.hypot(
+        route[index].x - route[index - 1].x,
+        route[index].y - route[index - 1].y
+      );
+    }
+
+    return gridSize > 0
+      ? pixels / gridSize * gridDistance
+      : pixels;
+  };
+
+  const refreshSummary = () => {
+    const route = readRoute();
+    const count = route.length;
+    const distance = measureRoute(route);
+    const units = canvas.scene?.grid?.units || "units";
+
+    status.classList.toggle(
+      "ttm-route-picker-status-ready",
+      count > 0
+    );
+
+    status.textContent = count
+      ? `✓ ${count} waypoint${count === 1 ? "" : "s"} plotted`
+        + (
+          count > 1
+            ? ` • ${Math.round(distance * 10) / 10} ${units}`
+            : ""
+        )
+      : "No route plotted";
+
+    plot.textContent = count
+      ? "✏ Edit Movement Route"
+      : "📏 Plot Movement Route";
+
+    clear.disabled = count === 0;
+  };
+
+  const createOverlay = () => {
+    const ContainerClass = globalThis.PIXI?.Container;
+    const GraphicsClass = globalThis.PIXI?.Graphics;
+
+    if (!ContainerClass || !GraphicsClass || !canvas?.stage) {
+      return null;
+    }
+
+    const container = new ContainerClass();
+    container.name = "TalkToMeMovementRoutePreview";
+    container.eventMode = "none";
+    container.zIndex = 100000;
+
+    const graphics = new GraphicsClass();
+    container.addChild(graphics);
+
+    const labels = new ContainerClass();
+    container.addChild(labels);
+
+    const parent =
+      canvas.controls?._rulerPaths
+      ?? canvas.controls
+      ?? canvas.stage;
+
+    parent.addChild(container);
+
+    return {
+      container,
+      graphics,
+      labels
+    };
+  };
+
+  const destroyOverlay = overlay => {
+    if (!overlay?.container) return;
+
+    try {
+      overlay.container.parent?.removeChild(
+        overlay.container
+      );
+      overlay.container.destroy({
+        children: true
+      });
+    } catch {
+      // The canvas may have been torn down while plotting.
+    }
+  };
+
+  const createWaypointLabel = (text, x, y) => {
+    const TextClass = globalThis.PIXI?.Text;
+    if (!TextClass) return null;
+
+    const style = {
+      fontFamily: "Signika, sans-serif",
+      fontSize: 14,
+      fontWeight: "bold",
+      fill: 0xffffff,
+      stroke: {
+        color: 0x000000,
+        width: 4
+      },
+      align: "center"
+    };
+
+    let label;
+
+    try {
+      label = new TextClass({
+        text,
+        style
+      });
+    } catch {
+      label = new TextClass(text, {
+        ...style,
+        stroke: 0x000000,
+        strokeThickness: 4
+      });
+    }
+
+    if (label.anchor?.set) label.anchor.set(0.5);
+    label.position.set(x, y);
+    return label;
+  };
+
+  const drawRoutePreview = (
+    overlay,
+    points,
+    cursorPoint = null
+  ) => {
+    if (!overlay) return;
+
+    const graphics = overlay.graphics;
+    graphics.clear();
+
+    for (const child of [...overlay.labels.children]) {
+      overlay.labels.removeChild(child);
+      child.destroy?.();
+    }
+
+    const previewPoints = cursorPoint
+      ? [...points, cursorPoint]
+      : [...points];
+
+    if (!previewPoints.length) return;
+
+    const drawLegacyLine = () => {
+      graphics.lineStyle(5, 0x49a6ff, 0.95);
+      graphics.moveTo(
+        previewPoints[0].x,
+        previewPoints[0].y
+      );
+
+      for (let index = 1; index < previewPoints.length; index += 1) {
+        graphics.lineTo(
+          previewPoints[index].x,
+          previewPoints[index].y
+        );
+      }
+    };
+
+    if (typeof graphics.lineStyle === "function") {
+      drawLegacyLine();
+    } else {
+      graphics.moveTo(
+        previewPoints[0].x,
+        previewPoints[0].y
+      );
+
+      for (let index = 1; index < previewPoints.length; index += 1) {
+        graphics.lineTo(
+          previewPoints[index].x,
+          previewPoints[index].y
+        );
+      }
+
+      graphics.stroke?.({
+        width: 5,
+        color: 0x49a6ff,
+        alpha: 0.95
+      });
+    }
+
+    points.forEach((point, index) => {
+      if (typeof graphics.beginFill === "function") {
+        graphics.lineStyle(3, 0x000000, 1);
+        graphics.beginFill(
+          index === points.length - 1
+            ? 0x5bd67b
+            : 0x49a6ff,
+          1
+        );
+        graphics.drawCircle(point.x, point.y, 10);
+        graphics.endFill();
+      } else {
+        graphics.circle(point.x, point.y, 10);
+        graphics.fill?.({
+          color:
+            index === points.length - 1
+              ? 0x5bd67b
+              : 0x49a6ff,
+          alpha: 1
+        });
+        graphics.stroke?.({
+          width: 3,
+          color: 0x000000,
+          alpha: 1
+        });
+      }
+
+      const label = createWaypointLabel(
+        String(index + 1),
+        point.x,
+        point.y - 22
+      );
+
+      if (label) overlay.labels.addChild(label);
+    });
+
+    if (points.length > 1) {
+      const distance = measureRoute(points);
+      const units = canvas.scene?.grid?.units || "units";
+      const finalPoint = points.at(-1);
+      const distanceLabel = createWaypointLabel(
+        `${Math.round(distance * 10) / 10} ${units}`,
+        finalPoint.x,
+        finalPoint.y + 24
+      );
+
+      if (distanceLabel) {
+        overlay.labels.addChild(distanceLabel);
+      }
+    }
+  };
+
+  clear.addEventListener("click", () => {
+    routeInput.value = "[]";
+    refreshSummary();
+  });
+
+  plot.addEventListener("click", () => {
+    const view = canvas?.app?.view;
+
+    if (!view || !canvas?.stage) {
+      ui.notifications.warn("Canvas is not ready.");
+      return;
+    }
+
+    const originalRoute = readRoute();
+    const points = [...originalRoute];
+    const overlay = createOverlay();
+    const oldCursor = view.style.cursor;
+    let cursorPoint = null;
+    let finished = false;
+
+    view.style.cursor = "crosshair";
+    drawRoutePreview(overlay, points);
+
+    ui.notifications.info(
+      "Route editor active: left-click to add waypoints, "
+      + "Backspace to undo, Enter or double-click to save, "
+      + "and Escape to cancel."
+    );
+
+    const cleanup = () => {
+      view.removeEventListener(
+        "pointerdown",
+        onPointerDown,
+        true
+      );
+      view.removeEventListener(
+        "pointermove",
+        onPointerMove,
+        true
+      );
+      view.removeEventListener(
+        "dblclick",
+        onDoubleClick,
+        true
+      );
+      window.removeEventListener(
+        "keydown",
+        onKeyDown,
+        true
+      );
+      view.style.cursor = oldCursor;
+      destroyOverlay(overlay);
+    };
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+
+      if (!points.length) {
+        ui.notifications.warn(
+          "No movement waypoints were plotted."
+        );
+        cleanup();
+        return;
+      }
+
+      routeInput.value = JSON.stringify(points);
+      cleanup();
+      refreshSummary();
+
+      ui.notifications.info(
+        `Saved ${points.length} movement waypoint`
+        + `${points.length === 1 ? "" : "s"}.`
+      );
+    };
+
+    const eventWorldPoint = event => {
+      const rect = view.getBoundingClientRect();
+      const screenPoint = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top
+      };
+      const worldPoint =
+        canvas.stage.worldTransform.applyInverse(screenPoint);
+
+      return {
+        x: Math.round(worldPoint.x),
+        y: Math.round(worldPoint.y)
+      };
+    };
+
+    const onPointerMove = event => {
+      cursorPoint = eventWorldPoint(event);
+      drawRoutePreview(overlay, points, cursorPoint);
+    };
+
+    const onPointerDown = event => {
+      if (event.button !== 0) return;
+
+      event.preventDefault?.();
+      event.stopPropagation?.();
+
+      points.push(eventWorldPoint(event));
+      drawRoutePreview(overlay, points, cursorPoint);
+    };
+
+    const onDoubleClick = event => {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+
+      if (!points.length) {
+        points.push(eventWorldPoint(event));
+      }
+
+      finish();
+    };
+
+    const onKeyDown = event => {
+      if (event.key === "Escape") {
+        finished = true;
+        cleanup();
+        ui.notifications.info(
+          "Movement route editing cancelled."
+        );
+        return;
+      }
+
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        points.pop();
+        drawRoutePreview(overlay, points, cursorPoint);
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        finish();
+      }
+    };
+
+    view.addEventListener(
+      "pointerdown",
+      onPointerDown,
+      true
+    );
+    view.addEventListener(
+      "pointermove",
+      onPointerMove,
+      true
+    );
+    view.addEventListener(
+      "dblclick",
+      onDoubleClick,
+      true
+    );
+    window.addEventListener("keydown", onKeyDown, true);
+  });
+
+  routeInput.type = "hidden";
+  refreshSummary();
+
+  ttmAdd(group, heading);
+  ttmAdd(group, status);
+  ttmAdd(group, plot);
+  ttmAdd(group, clear);
+  ttmAdd(group, routeInput);
+
+  group.refreshRouteSummary = refreshSummary;
+  return group;
+}
+
 createCanvasPointPickerField(labelText, xInput, yInput) {
   const group = ttmMake("div", null, "form-group ttm-coordinate-picker-group");
   const label = ttmMake("label", labelText);
@@ -1038,6 +1551,38 @@ pickTilePlacementPoint() {
   // Create tile options
   createTilesPanel() {
     const panel = ttmMake("section", null, "ttm-panel");
+
+    const tileMenuControls = ttmMake(
+      "div",
+      null,
+      "ttm-tile-menu-controls"
+    );
+
+    const openEditor = ttmMake(
+      "button",
+      "Edit Tiles",
+      "ttm-wide-menu-button"
+    );
+    openEditor.type = "button";
+    openEditor.addEventListener(
+      "click",
+      () => this.openTileEditor()
+    );
+
+    const openManager = ttmMake(
+      "button",
+      "Open Tile Manager",
+      "ttm-wide-menu-button"
+    );
+    openManager.type = "button";
+    openManager.addEventListener(
+      "click",
+      () => this.openTileManager()
+    );
+
+    ttmAdd(tileMenuControls, openEditor);
+    ttmAdd(tileMenuControls, openManager);
+    ttmAdd(panel, tileMenuControls);
     panel.dataset.panel = "tiles";
     panel.hidden = this.activeTab !== "tiles";
 
@@ -1050,6 +1595,7 @@ pickTilePlacementPoint() {
       ["globalLight", "Environment: Global Lighting"],
       ["trap", "Trap Activation"],
       ["teleport", "Teleport Activation"],
+      ["moveTokens", "Move Tokens"],
       ["reset", "Create Reset Tile"]
     ]) {
       const opt = ttmMake("option", label);
@@ -1333,6 +1879,53 @@ pickTilePlacementPoint() {
     linkedTriggerTileId.type = "text";
     linkedTriggerTileId.placeholder = "Optional TalkToMe tile id to trigger";
 
+    const moveTargetMode = ttmMake("select");
+    for (const [value, label] of [
+      ["triggering-token", "Triggering Token"],
+      ["tokens-within-tile", "Tokens Within Tile"],
+      ["selected-tokens", "Currently Selected Tokens"],
+      ["specific-npcs", "Specific NPCs"],
+      ["player-tokens", "All Player-Owned Tokens"]
+    ]) {
+      const option = ttmMake("option", label);
+      option.value = value;
+      ttmAdd(moveTargetMode, option);
+    }
+
+    const moveNpcTokens = this.createTokenMultiSelect(
+      "ttm-move-specific-npcs"
+    );
+
+    const moveRoute = ttmMake("input");
+    moveRoute.value = "[]";
+
+    const moveDestinationX = ttmMake("input");
+    moveDestinationX.type = "number";
+    moveDestinationX.placeholder = "Destination X";
+
+    const moveDestinationY = ttmMake("input");
+    moveDestinationY.type = "number";
+    moveDestinationY.placeholder = "Destination Y";
+
+    const moveOffsetX = ttmMake("input");
+    moveOffsetX.type = "number";
+    moveOffsetX.value = 0;
+
+    const moveOffsetY = ttmMake("input");
+    moveOffsetY.type = "number";
+    moveOffsetY.value = 0;
+
+    const moveSpacing = ttmMake("input");
+    moveSpacing.type = "number";
+    moveSpacing.min = 0;
+    moveSpacing.value = canvas.grid?.size ?? 100;
+
+    const moveAutoRotate = this.createCheckbox(
+      "ttm-move-auto-rotate",
+      "Rotate NPCs to face movement direction",
+      false
+    );
+
     const teleportSwitchX = ttmMake("input");
     teleportSwitchX.type = "number";
     teleportSwitchX.placeholder = "Auto-filled from placed tile";
@@ -1411,6 +2004,11 @@ pickTilePlacementPoint() {
       true
     );
 
+    const activationAudience =
+      this.createActivationAudienceSelect(
+        "ttm-activation-audience"
+      );
+
     const activationCooldownSeconds = ttmMake("input");
     activationCooldownSeconds.id = "ttm-activation-cooldown-seconds";
     activationCooldownSeconds.type = "number";
@@ -1418,7 +2016,11 @@ pickTilePlacementPoint() {
     activationCooldownSeconds.min = 0.2;
     activationCooldownSeconds.step = 0.1;
     const postChat = this.createCheckbox("ttm-tile-post-chat", "Tile also posts to chat", game.settings.get(TTM_ID, "postChatByDefault"));
-    const zoomToSpeaker = this.createCheckbox("ttm-tile-zoom", "Pan/zoom to speaking NPC", game.settings.get(TTM_ID, "zoomToSpeakerByDefault"));
+    const zoomToSpeaker = this.createCheckbox(
+      "ttm-tile-zoom",
+      "Pan/zoom to speaking NPC",
+      false
+    );
 
     const makeGroup = (title, templates) => {
       const group = ttmMake("section", null, "ttm-template-group");
@@ -1427,7 +2029,7 @@ pickTilePlacementPoint() {
       return group;
     };
 
-    const basicGroup = makeGroup("Basic Tile Setup", ["speech", "switch", "light", "globalLight", "trap", "teleport", "reset"]);
+    const basicGroup = makeGroup("Basic Tile Setup", ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"]);
     ttmAdd(basicGroup, this.createField("Template", template));
     ttmAdd(basicGroup, this.createField("Tile name", name));
     ttmAdd(basicGroup, this.createField("Trigger", trigger));
@@ -1437,18 +2039,31 @@ pickTilePlacementPoint() {
     ttmAdd(basicGroup, requirePlayerVision.label);
     ttmAdd(basicGroup, hideBehindWalls.label);
     ttmAdd(basicGroup, multipleUse.label);
+    ttmAdd(
+      basicGroup,
+      this.createField(
+        "Who can activate this tile?",
+        activationAudience
+      )
+    );
+    ttmAdd(
+      basicGroup,
+      this.createHint(
+        "Hold Ctrl or Cmd to select multiple categories."
+      )
+    );
     ttmAdd(basicGroup, activationCooldownEnabled.label);
     ttmAdd(
       basicGroup,
       this.createField("Pause after activation (seconds)", activationCooldownSeconds)
     );
 
-    const universalTriggerGroup = makeGroup("Switch Activated Trigger Options", ["speech", "switch", "light", "globalLight", "trap", "teleport", "reset"]);
+    const universalTriggerGroup = makeGroup("Switch Activated Trigger Options", ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"]);
     universalTriggerGroup.dataset.triggerOnly = "switch";
     ttmAdd(universalTriggerGroup, this.createHint("These options appear whenever Trigger is set to Switch activated, regardless of template."));
     ttmAdd(universalTriggerGroup, this.createField("Click activation", clickActivation));
 
-    const hotspotOptionsGroup = makeGroup("Clickable Hotspot Options", ["speech", "switch", "light", "globalLight", "trap", "teleport", "reset"]);
+    const hotspotOptionsGroup = makeGroup("Clickable Hotspot Options", ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"]);
     hotspotOptionsGroup.dataset.triggerOnly = "switch";
     hotspotOptionsGroup.dataset.requiresVisibleTile = "true";
     ttmAdd(hotspotOptionsGroup, this.createHint("Hotspot options only matter when the tile is visible and activated by click."));
@@ -1610,6 +2225,70 @@ pickTilePlacementPoint() {
     ttmAdd(trapGroup, this.createImagePickerField("Inactive/default image", trapInactiveImage));
     ttmAdd(trapGroup, this.createImagePickerField("Active image", trapActiveImage));
 
+    const moveTokensGroup = makeGroup(
+      "Move Tokens Options",
+      ["moveTokens"]
+    );
+    ttmAdd(
+      moveTokensGroup,
+      this.createField("Tokens to move", moveTargetMode)
+    );
+
+    const moveNpcTokensField = this.createField(
+      "NPCs to move",
+      moveNpcTokens
+    );
+    moveNpcTokensField.hidden = true;
+    ttmAdd(moveTokensGroup, moveNpcTokensField);
+
+    const moveRouteField =
+      this.createMovementRoutePickerField(
+        "Movement route",
+        moveRoute
+      );
+    ttmAdd(moveTokensGroup, moveRouteField);
+    ttmAdd(
+      moveTokensGroup,
+      this.createCanvasPointPickerField(
+        "Fallback destination",
+        moveDestinationX,
+        moveDestinationY
+      )
+    );
+    ttmAdd(
+      moveTokensGroup,
+      this.createField("Destination offset X", moveOffsetX)
+    );
+    ttmAdd(
+      moveTokensGroup,
+      this.createField("Destination offset Y", moveOffsetY)
+    );
+    ttmAdd(
+      moveTokensGroup,
+      this.createField("Formation spacing", moveSpacing)
+    );
+    ttmAdd(moveTokensGroup, moveAutoRotate.label);
+    ttmAdd(
+      moveTokensGroup,
+      this.createHint(
+        "Tokens move with Foundry's normal animation. Multiple tokens are arranged around the destination."
+      )
+    );
+
+    const updateMoveNpcVisibility = () => {
+      const useSpecificNpcs =
+        moveTargetMode.value === "specific-npcs";
+
+      moveNpcTokensField.hidden = !useSpecificNpcs;
+      moveNpcTokens.disabled = !useSpecificNpcs;
+    };
+
+    moveTargetMode.addEventListener(
+      "change",
+      updateMoveNpcVisibility
+    );
+    updateMoveNpcVisibility();
+
     const teleportGroup = makeGroup("Teleport Options", ["teleport"]);
     ttmAdd(teleportGroup, this.createField("Switch location X", teleportSwitchX));
     ttmAdd(teleportGroup, this.createField("Switch location Y", teleportSwitchY));
@@ -1668,6 +2347,43 @@ pickTilePlacementPoint() {
           ui.notifications.warn(
             `NPC ${missingSlot} is used in the speaking order `
             + "but has no RollTable assigned."
+          );
+          return;
+        }
+      }
+
+      if (template.value === "moveTokens") {
+        const moveX = Number(moveDestinationX.value);
+        const moveY = Number(moveDestinationY.value);
+
+        let plottedRoute = [];
+
+        try {
+          plottedRoute = JSON.parse(moveRoute.value || "[]");
+        } catch {
+          plottedRoute = [];
+        }
+
+        const hasRoute =
+          Array.isArray(plottedRoute)
+          && plottedRoute.length > 0;
+        const hasDestination =
+          Number.isFinite(moveX)
+          && Number.isFinite(moveY);
+
+        if (!hasRoute && !hasDestination) {
+          ui.notifications.warn(
+            "Plot a movement route or choose a fallback destination."
+          );
+          return;
+        }
+
+        if (
+          moveTargetMode.value === "specific-npcs"
+          && moveNpcTokens.selectedOptions.length === 0
+        ) {
+          ui.notifications.warn(
+            "Select at least one NPC for the Move Tokens tile."
           );
           return;
         }
@@ -1752,6 +2468,9 @@ pickTilePlacementPoint() {
         requirePlayerVision: requirePlayerVision.input.checked,
         hideBehindWalls: hideBehindWalls.input.checked,
         multipleUse: multipleUse.input.checked,
+        activationActorTypes: Array.from(
+          activationAudience.selectedOptions
+        ).map(option => option.value),
         activationCooldownEnabled: activationCooldownEnabled.input.checked,
         activationCooldownSeconds: Math.max(
           0.2,
@@ -1797,6 +2516,24 @@ pickTilePlacementPoint() {
         saveDC: Number(saveDC.value || 10),
         trapTarget: trapTarget.value,
         linkedTriggerTileId: linkedTriggerTileId.value.trim(),
+        moveDestinationX: moveDestinationX.value,
+        moveDestinationY: moveDestinationY.value,
+        moveRoute: (() => {
+          try {
+            const parsed = JSON.parse(moveRoute.value || "[]");
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })(),
+        moveTargetMode: moveTargetMode.value,
+        moveTokenIds: Array.from(
+          moveNpcTokens.selectedOptions
+        ).map(option => option.value),
+        moveOffsetX: Number(moveOffsetX.value || 0),
+        moveOffsetY: Number(moveOffsetY.value || 0),
+        moveSpacing: Math.max(0, Number(moveSpacing.value || 0)),
+        moveAutoRotate: moveAutoRotate.input.checked,
         teleportSwitchX: teleportSwitchX.value,
         teleportSwitchY: teleportSwitchY.value,
         teleportX: teleportX.value,
@@ -1893,24 +2630,11 @@ const updateTemplateVisibility = () => {
     ttmAdd(panel, globalLightGroup);
     ttmAdd(panel, trapGroup);
     ttmAdd(panel, teleportGroup);
+    ttmAdd(panel, moveTokensGroup);
     ttmAdd(panel, resetGroup);
     ttmAdd(panel, buttons);
     ttmAdd(panel, ttmMake("hr"));
 
-    const openEditor = ttmMake("button", "Open Tile Editor");
-    openEditor.type = "button";
-    openEditor.addEventListener("click", () => this.openTileEditor());
-
-    ttmAdd(panel, openEditor);
-
-    const openManager = ttmMake("button", "Manage TalkToMe Tiles");
-    openManager.type = "button";
-    openManager.addEventListener(
-      "click",
-      () => this.openTileManager()
-    );
-
-    ttmAdd(panel, openManager);
 
     setTimeout(() => {
       updateTemplateVisibility();
@@ -2367,6 +3091,7 @@ createTileEditorBox() {
     ["globalLight", "Environment: Global Lighting"],
     ["trap", "Trap Activation"],
     ["teleport", "Teleport Activation"],
+    ["moveTokens", "Move Tokens"],
     ["reset", "Reset Tile"]
   ]);
   const trigger = makeSelect([
@@ -2431,6 +3156,30 @@ createTileEditorBox() {
     ["tokens-within-tile", "Tokens Within Tile"],
     ["use-player-tokens", "Use Player Tokens"]
   ]);
+
+  const moveTargetMode = makeSelect([
+    ["triggering-token", "Triggering Token"],
+    ["tokens-within-tile", "Tokens Within Tile"],
+    ["selected-tokens", "Currently Selected Tokens"],
+    ["specific-npcs", "Specific NPCs"],
+    ["player-tokens", "All Player-Owned Tokens"]
+  ]);
+  const moveNpcTokensEdit = this.createTokenMultiSelect(
+    "ttm-edit-move-specific-npcs"
+  );
+  const moveRouteEdit = makeInput();
+  moveRouteEdit.type = "hidden";
+  moveRouteEdit.value = "[]";
+  const moveDestinationX = makeNumber();
+  const moveDestinationY = makeNumber();
+  const moveOffsetX = makeNumber();
+  const moveOffsetY = makeNumber();
+  const moveSpacing = makeNumber(null, 0);
+  const moveAutoRotateEdit = this.createCheckbox(
+    "ttm-edit-move-auto-rotate",
+    "Rotate NPCs to face movement direction",
+    false
+  );
 
   const teleportX = makeNumber();
   const teleportY = makeNumber();
@@ -2552,6 +3301,11 @@ createTileEditorBox() {
     true
   );
 
+  const activationAudienceEdit =
+    this.createActivationAudienceSelect(
+      "ttm-edit-activation-audience"
+    );
+
   const cooldownEnabled = this.createCheckbox(
     "ttm-edit-cooldown-enabled",
     "Enable activation cooldown",
@@ -2576,7 +3330,7 @@ createTileEditorBox() {
   };
 
   const commonGroup = makeGroup("Common Settings", [
-    "speech", "switch", "light", "globalLight", "trap", "teleport", "reset"
+    "speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"
   ]);
   ttmAdd(commonGroup, this.createField("Tile name", name));
   ttmAdd(commonGroup, this.createField("Template", template));
@@ -2601,6 +3355,19 @@ createTileEditorBox() {
   ttmAdd(commonGroup, requireVision.label);
   ttmAdd(commonGroup, hideBehindWalls.label);
   ttmAdd(commonGroup, multipleUseEdit.label);
+  ttmAdd(
+    commonGroup,
+    this.createField(
+      "Who can activate this tile?",
+      activationAudienceEdit
+    )
+  );
+  ttmAdd(
+    commonGroup,
+    this.createHint(
+      "Hold Ctrl or Cmd to select multiple categories."
+    )
+  );
   ttmAdd(commonGroup, cooldownEnabled.label);
   ttmAdd(commonGroup, this.createField(
     "Pause after activation (seconds)",
@@ -2771,6 +3538,49 @@ createTileEditorBox() {
   ttmAdd(trapGroup, this.createField("Save DC", saveDC));
   ttmAdd(trapGroup, this.createField("Target mode", trapTarget));
 
+  const moveTokensGroup = makeGroup(
+    "Move Tokens Settings",
+    ["moveTokens"]
+  );
+  ttmAdd(
+    moveTokensGroup,
+    this.createField("Tokens to move", moveTargetMode)
+  );
+
+  const moveNpcTokensEditField = this.createField(
+    "NPCs to move",
+    moveNpcTokensEdit
+  );
+  ttmAdd(moveTokensGroup, moveNpcTokensEditField);
+
+  const moveRouteEditField =
+    this.createMovementRoutePickerField(
+      "Movement route",
+      moveRouteEdit
+    );
+  ttmAdd(moveTokensGroup, moveRouteEditField);
+  ttmAdd(
+    moveTokensGroup,
+    this.createCanvasPointPickerField(
+      "Fallback destination",
+      moveDestinationX,
+      moveDestinationY
+    )
+  );
+  ttmAdd(
+    moveTokensGroup,
+    this.createField("Destination offset X", moveOffsetX)
+  );
+  ttmAdd(
+    moveTokensGroup,
+    this.createField("Destination offset Y", moveOffsetY)
+  );
+  ttmAdd(
+    moveTokensGroup,
+    this.createField("Formation spacing", moveSpacing)
+  );
+  ttmAdd(moveTokensGroup, moveAutoRotateEdit.label);
+
   const teleportGroup = makeGroup("Teleport Settings", ["teleport"]);
   ttmAdd(teleportGroup, this.createField("Destination X", teleportX));
   ttmAdd(teleportGroup, this.createField("Destination Y", teleportY));
@@ -2805,6 +3615,7 @@ createTileEditorBox() {
     globalLightGroup,
     trapGroup,
     teleportGroup,
+    moveTokensGroup,
     resetGroup
   ]) {
     ttmAdd(fields, group);
@@ -2861,6 +3672,14 @@ createTileEditorBox() {
 
     conversationSequenceEnabledEdit.input.checked = isSequence;
     conversationEnabledEdit.input.checked = isAdvanced;
+  };
+
+  const updateMoveNpcEditorVisibility = () => {
+    const useSpecificNpcs =
+      moveTargetMode.value === "specific-npcs";
+
+    moveNpcTokensEditField.hidden = !useSpecificNpcs;
+    moveNpcTokensEdit.disabled = !useSpecificNpcs;
   };
 
   const updateTemplateGroups = () => {
@@ -2939,6 +3758,35 @@ createTileEditorBox() {
     saveDC.value = Number(utility.saveDC ?? 10);
     trapTarget.value = utility.trapTarget ?? "triggering-token";
 
+    moveDestinationX.value = utility.moveDestinationX ?? "";
+    moveDestinationY.value = utility.moveDestinationY ?? "";
+    moveRouteEdit.value = JSON.stringify(
+      Array.isArray(utility.moveRoute)
+        ? utility.moveRoute
+        : []
+    );
+    moveRouteEditField.refreshRouteSummary?.();
+    moveTargetMode.value =
+      utility.moveTargetMode ?? "triggering-token";
+
+    const selectedMoveTokenIds = new Set(
+      Array.isArray(utility.moveTokenIds)
+        ? utility.moveTokenIds
+        : []
+    );
+
+    for (const option of moveNpcTokensEdit.options) {
+      option.selected = selectedMoveTokenIds.has(option.value);
+    }
+
+    moveOffsetX.value = Number(utility.moveOffsetX ?? 0);
+    moveOffsetY.value = Number(utility.moveOffsetY ?? 0);
+    moveSpacing.value = Number(
+      utility.moveSpacing ?? canvas.grid?.size ?? 100
+    );
+    moveAutoRotateEdit.input.checked =
+      utility.moveAutoRotate === true;
+
     teleportX.value = utility.teleportX ?? "";
     teleportY.value = utility.teleportY ?? "";
     teleportOffsetX.value = Number(utility.teleportOffsetX ?? 0);
@@ -3014,6 +3862,19 @@ createTileEditorBox() {
       utility.hideBehindWalls === true;
     multipleUseEdit.input.checked =
       utility.multipleUse !== false;
+
+    const allowedActivationTypes = new Set(
+      Array.isArray(utility.activationActorTypes)
+        ? utility.activationActorTypes
+        : ["players", "npcs", "groups", "vehicles"]
+    );
+
+    for (const option of activationAudienceEdit.options) {
+      option.selected = allowedActivationTypes.has(
+        option.value
+      );
+    }
+
     cooldownEnabled.input.checked =
       utility.activationCooldownEnabled === true;
     cooldownSeconds.value = Number(
@@ -3021,6 +3882,7 @@ createTileEditorBox() {
     );
 
     updateCooldownState();
+    updateMoveNpcEditorVisibility();
     updateTemplateGroups();
 
     status.textContent =
@@ -3031,6 +3893,10 @@ createTileEditorBox() {
   reload.addEventListener("click", loadTile);
   template.addEventListener("change", updateTemplateGroups);
   trigger.addEventListener("change", updateTemplateGroups);
+  moveTargetMode.addEventListener(
+    "change",
+    updateMoveNpcEditorVisibility
+  );
   speechMode.addEventListener("change", updateSpeechMode);
   conversationSequenceEnabledEdit.input.addEventListener(
     "change",
@@ -3066,6 +3932,17 @@ createTileEditorBox() {
     const currentSpeech =
       tileDoc.getFlag(TTM_ID, "speech") ?? {};
     const selectedTemplate = template.value;
+
+    if (
+      selectedTemplate === "moveTokens"
+      && moveTargetMode.value === "specific-npcs"
+      && moveNpcTokensEdit.selectedOptions.length === 0
+    ) {
+      ui.notifications.warn(
+        "Select at least one NPC for the Move Tokens tile."
+      );
+      return;
+    }
 
     if (
       selectedTemplate === "speech"
@@ -3118,6 +3995,9 @@ createTileEditorBox() {
       requirePlayerVision: requireVision.input.checked,
       hideBehindWalls: hideBehindWalls.input.checked,
       multipleUse: multipleUseEdit.input.checked,
+      activationActorTypes: Array.from(
+        activationAudienceEdit.selectedOptions
+      ).map(option => option.value),
       activationCooldownEnabled: cooldownEnabled.input.checked,
       activationCooldownSeconds: Math.max(
         0.2,
@@ -3164,6 +4044,34 @@ createTileEditorBox() {
       });
     }
 
+    if (selectedTemplate === "moveTokens") {
+      Object.assign(utilityPatch, {
+        moveDestinationX: moveDestinationX.value,
+        moveDestinationY: moveDestinationY.value,
+        moveRoute: (() => {
+          try {
+            const parsed = JSON.parse(
+              moveRouteEdit.value || "[]"
+            );
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })(),
+        moveTargetMode: moveTargetMode.value,
+        moveTokenIds: Array.from(
+          moveNpcTokensEdit.selectedOptions
+        ).map(option => option.value),
+        moveOffsetX: Number(moveOffsetX.value || 0),
+        moveOffsetY: Number(moveOffsetY.value || 0),
+        moveSpacing: Math.max(
+          0,
+          Number(moveSpacing.value || 0)
+        ),
+        moveAutoRotate: moveAutoRotateEdit.input.checked
+      });
+    }
+
     if (selectedTemplate === "teleport") {
       Object.assign(utilityPatch, {
         teleportX: teleportX.value,
@@ -3190,6 +4098,9 @@ createTileEditorBox() {
       requirePlayerVision: requireVision.input.checked,
       hideBehindWalls: hideBehindWalls.input.checked,
       multipleUse: multipleUseEdit.input.checked,
+      activationActorTypes: Array.from(
+        activationAudienceEdit.selectedOptions
+      ).map(option => option.value),
       activationCooldownEnabled: cooldownEnabled.input.checked,
       activationCooldownSeconds: Math.max(
         0.2,
@@ -3339,6 +4250,266 @@ createTileEditorBox() {
   return box;
 }
 
+  // Node-based tile chains
+  createNodeEditorPanel() {
+    const panel = ttmMake("section", null, "ttm-panel");
+    panel.dataset.panel = "nodes";
+    panel.hidden = this.activeTab !== "nodes";
+
+    ttmAdd(
+      panel,
+      this.createHint(
+        "Build a chain on one source tile. The source can trigger "
+        + "multiple existing tiles without placing extra connector tiles."
+      )
+    );
+
+    const sourceSelect = ttmMake("select");
+    const sourceBlank = ttmMake(
+      "option",
+      "— Choose the source tile —"
+    );
+    sourceBlank.value = "";
+    ttmAdd(sourceSelect, sourceBlank);
+
+    for (const tile of this.getTalkToMeTiles()) {
+      const option = ttmMake(
+        "option",
+        `${tile.name ?? "Tile"} [${tile.id}]`
+      );
+      option.value = tile.id;
+      ttmAdd(sourceSelect, option);
+    }
+
+    const mode = ttmMake("select");
+    for (const [value, label] of [
+      ["sequence", "Run targets in sequence"],
+      ["parallel", "Run all targets together"]
+    ]) {
+      const option = ttmMake("option", label);
+      option.value = value;
+      ttmAdd(mode, option);
+    }
+
+    const rows = ttmMake(
+      "div",
+      null,
+      "ttm-node-target-list"
+    );
+
+    const createTargetSelect = () => {
+      const select = ttmMake("select");
+      const blank = ttmMake(
+        "option",
+        "— Choose a target tile —"
+      );
+      blank.value = "";
+      ttmAdd(select, blank);
+
+      for (const tile of this.getTalkToMeTiles()) {
+        const option = ttmMake(
+          "option",
+          `${tile.name ?? "Tile"} [${tile.id}]`
+        );
+        option.value = tile.id;
+        ttmAdd(select, option);
+      }
+
+      return select;
+    };
+
+    const addTargetRow = (data = {}) => {
+      const row = ttmMake(
+        "div",
+        null,
+        "ttm-node-target-row"
+      );
+      const target = createTargetSelect();
+      const delay = ttmMake("input");
+      const remove = ttmMake("button", "Remove");
+
+      target.value = data.tileId ?? "";
+      delay.type = "number";
+      delay.min = 0;
+      delay.step = 0.1;
+      delay.value = Number(data.delay ?? 0);
+      delay.title = "Delay before this target runs, in seconds";
+
+      remove.type = "button";
+      remove.addEventListener("click", () => row.remove());
+
+      ttmAdd(row, target);
+      ttmAdd(row, delay);
+      ttmAdd(row, remove);
+      rows.appendChild(row);
+    };
+
+    const loadGraph = () => {
+      rows.replaceChildren();
+
+      const source = canvas.scene?.tiles?.get(
+        sourceSelect.value
+      );
+      const graph =
+        source?.getFlag(TTM_ID, "nodeGraph") ?? {};
+
+      mode.value = graph.mode ?? "sequence";
+
+      const targets = Array.isArray(graph.targets)
+        ? graph.targets
+        : [];
+
+      if (!targets.length) addTargetRow();
+      else targets.forEach(addTargetRow);
+    };
+
+    sourceSelect.addEventListener("change", loadGraph);
+
+    const addTarget = ttmMake(
+      "button",
+      "＋ Add Target Tile",
+      "ttm-node-editor-button"
+    );
+    addTarget.type = "button";
+    addTarget.addEventListener(
+      "click",
+      () => addTargetRow()
+    );
+
+    const save = ttmMake(
+      "button",
+      "Save Tile Chain",
+      "ttm-node-editor-button"
+    );
+    save.type = "button";
+    save.addEventListener("click", async () => {
+      const source = canvas.scene?.tiles?.get(
+        sourceSelect.value
+      );
+
+      if (!source) {
+        ui.notifications.warn(
+          "Choose a source tile for the node chain."
+        );
+        return;
+      }
+
+      const targets = Array.from(
+        rows.querySelectorAll(".ttm-node-target-row")
+      )
+        .map(row => {
+          const controls = row.querySelectorAll(
+            "select, input"
+          );
+
+          return {
+            tileId: controls[0]?.value ?? "",
+            delay: Math.max(
+              0,
+              Number(controls[1]?.value ?? 0)
+            )
+          };
+        })
+        .filter(target =>
+          target.tileId
+          && target.tileId !== source.id
+        );
+
+      await source.setFlag(TTM_ID, "nodeGraph", {
+        enabled: true,
+        mode: mode.value,
+        targets
+      });
+
+      ui.notifications.info(
+        `Saved ${targets.length} node target`
+        + `${targets.length === 1 ? "" : "s"} `
+        + `to ${source.name ?? "the source tile"}.`
+      );
+    });
+
+    const disable = ttmMake(
+      "button",
+      "Disable Tile Chain",
+      "ttm-node-editor-button"
+    );
+    disable.type = "button";
+    disable.addEventListener("click", async () => {
+      const source = canvas.scene?.tiles?.get(
+        sourceSelect.value
+      );
+
+      if (!source) {
+        ui.notifications.warn(
+          "Choose a source tile first."
+        );
+        return;
+      }
+
+      await source.unsetFlag(TTM_ID, "nodeGraph");
+      loadGraph();
+      ui.notifications.info("Tile chain disabled.");
+    });
+
+    const test = ttmMake(
+      "button",
+      "Test Tile Chain",
+      "ttm-node-editor-button"
+    );
+    test.type = "button";
+    test.addEventListener("click", async () => {
+      const source = canvas.scene?.tiles?.get(
+        sourceSelect.value
+      );
+
+      if (!source) {
+        ui.notifications.warn(
+          "Choose and save a source tile first."
+        );
+        return;
+      }
+
+      await game.talkToMe?.runNodeGraph?.(
+        source,
+        canvas.tokens?.controlled?.[0] ?? null
+      );
+    });
+
+    ttmAdd(
+      panel,
+      this.createField("Source tile", sourceSelect)
+    );
+    ttmAdd(
+      panel,
+      this.createField("Execution mode", mode)
+    );
+
+    const headings = ttmMake(
+      "div",
+      null,
+      "ttm-node-target-headings"
+    );
+    ttmAdd(headings, ttmMake("strong", "Target tile"));
+    ttmAdd(headings, ttmMake("strong", "Delay (seconds)"));
+    ttmAdd(headings, ttmMake("span", ""));
+    ttmAdd(panel, headings);
+    ttmAdd(panel, rows);
+    ttmAdd(panel, addTarget);
+
+    const actions = ttmMake(
+      "div",
+      null,
+      "ttm-node-editor-actions"
+    );
+    ttmAdd(actions, save);
+    ttmAdd(actions, test);
+    ttmAdd(actions, disable);
+    ttmAdd(panel, actions);
+
+    addTargetRow();
+    return panel;
+  }
+
   // Macro generator
   createMacrosPanel() {
     const panel = ttmMake("section", null, "ttm-panel");
@@ -3414,7 +4585,7 @@ createTileEditorBox() {
     ttmAdd(buttons, copy);
 
     ttmAdd(panel, this.createHint("Generate snippets for Foundry hotbar macros or Monk's Active Tile Triggers Execute Script actions."));
-    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "globalLight", "trap", "teleport", "reset"]));
+    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"]));
     ttmAdd(panel, this.createField("Token source", source));
     ttmAdd(panel, this.createField("Custom NPC name", npc));
     ttmAdd(panel, this.createField("Token name or ID", tokenRef));
