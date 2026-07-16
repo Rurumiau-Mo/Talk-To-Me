@@ -14,6 +14,10 @@
 import { TTM_ID } from "./constants.js";
 import { ttmNotice } from "./helpers.js";
 import { lightManager } from "./light-manager.js";
+import {
+  activateTileEffects,
+  playTileEffectsLocal
+} from "./effects.js";
 
 export const TTM_TEMPLATES = {
   SPEECH: "speech",
@@ -23,6 +27,7 @@ export const TTM_TEMPLATES = {
   TRAP: "trap",
   TELEPORT: "teleport",
   MOVE_TOKENS: "moveTokens",
+  SPAWN_TOKENS: "spawnTokens",
   RESET: "reset"
 };
 
@@ -652,6 +657,12 @@ export async function activateUtilityTemplate(tileDoc, tokenLike = null, overrid
   }
   if (utility.template === TTM_TEMPLATES.TRAP) return activateTrapTile(tileDoc, tokenLike);
   if (utility.template === TTM_TEMPLATES.TELEPORT) return teleportToken(tileDoc, tokenLike);
+  if (utility.template === TTM_TEMPLATES.MOVE_TOKENS) {
+    return moveTokensToDestination(tileDoc, tokenLike);
+  }
+  if (utility.template === TTM_TEMPLATES.SPAWN_TOKENS) {
+    return spawnTokensFromTile(tileDoc);
+  }
   if (utility.template === TTM_TEMPLATES.RESET) return activateResetTile(tileDoc);
 
   return false;
@@ -1038,6 +1049,185 @@ export async function runNodeGraph(
   }
 }
 
+const activeMultiUseTiles = new Set();
+
+function multiUseKey(tileDoc) {
+  return `${tileDoc?.parent?.id ?? canvas.scene?.id ?? "scene"}.${tileDoc?.id ?? "tile"}`;
+}
+
+function resolveMultiUseToken(tokenLike, tokenId = "") {
+  if (tokenId) {
+    return canvas.tokens?.get(tokenId) ?? null;
+  }
+
+  return tokenLike?.document
+    ? tokenLike
+    : tokenLike?.object
+      ?? canvas.tokens?.controlled?.[0]
+      ?? game.user?.targets?.first?.()
+      ?? null;
+}
+
+export async function runMultiUseActions(
+  api,
+  sourceTileDoc,
+  tokenLike = null
+) {
+  if (!api || !sourceTileDoc) return false;
+
+  const config =
+    sourceTileDoc.getFlag(TTM_ID, "multiUse") ?? {};
+
+  if (
+    config.enabled !== true
+    || !Array.isArray(config.actions)
+    || config.actions.length === 0
+  ) {
+    return false;
+  }
+
+  const key = multiUseKey(sourceTileDoc);
+  if (activeMultiUseTiles.has(key)) {
+    console.warn(
+      "TalkToMe prevented a circular multi-use tile.",
+      sourceTileDoc.name
+    );
+    return false;
+  }
+
+  activeMultiUseTiles.add(key);
+
+  const createVirtualTile = action => {
+    const virtual = Object.create(sourceTileDoc);
+
+    Object.defineProperty(virtual, "name", {
+      value:
+        `${sourceTileDoc.name ?? "TalkToMe"} `
+        + `(${action.template ?? "action"})`,
+      configurable: true
+    });
+
+    virtual.getFlag = (scope, key) => {
+      if (scope === TTM_ID && key === "utility") {
+        return {
+          ...(sourceTileDoc.getFlag(TTM_ID, "utility") ?? {}),
+          ...action,
+          template: action.template
+        };
+      }
+
+      return sourceTileDoc.getFlag(scope, key);
+    };
+
+    return virtual;
+  };
+
+  const runAction = async action => {
+    const template = action?.template;
+    if (!template) return false;
+
+    const virtualTile = createVirtualTile(action);
+
+    if (template === TTM_TEMPLATES.SPEECH) {
+      const token = resolveMultiUseToken(
+        tokenLike,
+        action.tokenId
+      );
+
+      if (!token) {
+        ui.notifications.warn(
+          "TalkToMe multi-use speech needs a speaker token."
+        );
+        return false;
+      }
+
+      let text = String(action.text ?? "");
+
+      if (action.mode === "table" && action.tableId) {
+        const table = game.tables?.get(action.tableId);
+
+        if (!table) {
+          ui.notifications.warn(
+            "TalkToMe multi-use RollTable was not found."
+          );
+          return false;
+        }
+
+        text = await api.rollTable(table);
+      }
+
+      if (!String(text ?? "").trim()) return false;
+
+      return api.say({
+        token,
+        text,
+        npcName: String(action.npcName ?? ""),
+        postChat: false,
+        broadcast: true,
+        zoomToSpeaker: false
+      });
+    }
+
+    if (template === TTM_TEMPLATES.SWITCH) {
+      await applyDoorState(action);
+      return true;
+    }
+
+    if (template === TTM_TEMPLATES.LIGHT) {
+      return toggleLightTile(virtualTile);
+    }
+
+    if (template === TTM_TEMPLATES.GLOBAL_LIGHT) {
+      return activateGlobalLightingTile(virtualTile);
+    }
+
+    if (template === TTM_TEMPLATES.TRAP) {
+      return activateTrapTile(virtualTile, tokenLike);
+    }
+
+    if (template === TTM_TEMPLATES.TELEPORT) {
+      return runTeleportUtility(
+        virtualTile,
+        tokenLike,
+        { debug: false }
+      );
+    }
+
+    if (template === TTM_TEMPLATES.MOVE_TOKENS) {
+      return moveTokensToDestination(
+        virtualTile,
+        tokenLike
+      );
+    }
+
+    if (template === TTM_TEMPLATES.SPAWN_TOKENS) {
+      return spawnTokensFromTile(virtualTile);
+    }
+
+    if (template === TTM_TEMPLATES.RESET) {
+      return activateResetTile(sourceTileDoc);
+    }
+
+    return false;
+  };
+
+  try {
+    if (config.mode === "parallel") {
+      await Promise.allSettled(
+        config.actions.map(runAction)
+      );
+    } else {
+      for (const action of config.actions) {
+        await runAction(action);
+      }
+    }
+
+    return true;
+  } finally {
+    activeMultiUseTiles.delete(key);
+  }
+}
+
 async function finishUtilityActivation(
   api,
   tileDoc,
@@ -1046,8 +1236,132 @@ async function finishUtilityActivation(
 ) {
   if (result === false) return false;
 
+  await activateTileEffects(tileDoc);
+  await runMultiUseActions(api, tileDoc, tokenLike);
   await runNodeGraph(api, tileDoc, tokenLike);
   return result;
+}
+
+// Spawn actor prototype tokens
+function getSpawnFormationOffset(index, count, spacing, formation) {
+  if (count <= 1 || formation === "single") {
+    return { x: 0, y: 0 };
+  }
+
+  if (formation === "circle") {
+    const radius = Math.max(spacing, spacing * count / (2 * Math.PI));
+    const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
+    return {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius
+    };
+  }
+
+  if (formation === "random") {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.sqrt(Math.random()) * spacing * Math.max(1, Math.sqrt(count));
+    return {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius
+    };
+  }
+
+  const columns = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / columns);
+  const column = index % columns;
+  const row = Math.floor(index / columns);
+
+  return {
+    x: (column - (columns - 1) / 2) * spacing,
+    y: (row - (rows - 1) / 2) * spacing
+  };
+}
+
+async function buildSpawnTokenData(actor, x, y) {
+  if (typeof actor?.getTokenDocument === "function") {
+    const tokenDoc = await actor.getTokenDocument({ x, y });
+    return tokenDoc?.toObject?.() ?? tokenDoc;
+  }
+
+  const prototype = actor?.prototypeToken?.toObject?.()
+    ?? foundry.utils.deepClone(actor?.prototypeToken ?? {});
+
+  return {
+    ...prototype,
+    actorId: actor.id,
+    actorLink: Boolean(prototype.actorLink),
+    x,
+    y
+  };
+}
+
+export async function spawnTokensFromTile(tileDoc) {
+  const scene = tileDoc?.parent ?? canvas.scene;
+  if (!scene) return false;
+
+  const flags = getUtilityFlags(tileDoc);
+  const actor = game.actors?.get(flags.spawnActorId);
+
+  if (!actor) {
+    ui.notifications.warn("TalkToMe Spawn Tokens actor could not be found.");
+    return false;
+  }
+
+  const quantity = Math.max(1, Math.min(50, Number(flags.spawnQuantity ?? 1)));
+  const pointX = Number(flags.spawnX);
+  const pointY = Number(flags.spawnY);
+
+  if (!Number.isFinite(pointX) || !Number.isFinite(pointY)) {
+    ui.notifications.warn("TalkToMe Spawn Tokens location is missing.");
+    return false;
+  }
+
+  const spacing = Math.max(0, Number(flags.spawnSpacing ?? canvas.grid?.size ?? 100));
+  const formation = flags.spawnFormation ?? "grid";
+  const tokenData = [];
+
+  for (let index = 0; index < quantity; index += 1) {
+    const offset = getSpawnFormationOffset(index, quantity, spacing, formation);
+    const data = await buildSpawnTokenData(
+      actor,
+      Math.round(pointX + offset.x),
+      Math.round(pointY + offset.y)
+    );
+
+    if (!data) continue;
+    delete data._id;
+
+    const gridSize = Number(canvas.grid?.size ?? scene.grid?.size ?? 100);
+    const tokenWidth = Math.max(1, Number(data.width ?? 1)) * gridSize;
+    const tokenHeight = Math.max(1, Number(data.height ?? 1)) * gridSize;
+    data.x = Math.round(pointX + offset.x - tokenWidth / 2);
+    data.y = Math.round(pointY + offset.y - tokenHeight / 2);
+    data.hidden = flags.spawnHidden === true;
+    data.flags = foundry.utils.mergeObject(
+      data.flags ?? {},
+      {
+        [TTM_ID]: {
+          spawnedByTileId: tileDoc.id
+        }
+      },
+      { inplace: false }
+    );
+    tokenData.push(data);
+  }
+
+  if (!tokenData.length) return false;
+
+  const created = await scene.createEmbeddedDocuments("Token", tokenData, {
+    talkToMeSpawnTokens: true
+  });
+  const spawnedTokenIds = created.map(token => token.id);
+
+  await tileDoc.update({
+    [`flags.${TTM_ID}.utility.active`]: true,
+    [`flags.${TTM_ID}.utility.spawnedTokenIds`]: spawnedTokenIds
+  });
+
+  return true;
 }
 
 export async function applyUtilityTemplateActions(api, tileDoc, tokenLike = null) {
@@ -1095,6 +1409,16 @@ export async function applyUtilityTemplateActions(api, tileDoc, tokenLike = null
       tileDoc,
       tokenLike
     );
+    return finishUtilityActivation(
+      api,
+      tileDoc,
+      tokenLike,
+      result
+    );
+  }
+
+  if (flags.template === TTM_TEMPLATES.SPAWN_TOKENS) {
+    const result = await spawnTokensFromTile(tileDoc);
     return finishUtilityActivation(
       api,
       tileDoc,
@@ -1496,6 +1820,29 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
   const original = flags.originalState ?? {};
   const template = flags.template;
 
+  // Remove tokens created by Spawn Tokens tiles when reset cleanup is enabled.
+  if (
+    template === TTM_TEMPLATES.SPAWN_TOKENS
+    && flags.spawnRemoveOnReset !== false
+  ) {
+    const storedIds = Array.isArray(flags.spawnedTokenIds)
+      ? flags.spawnedTokenIds
+      : [];
+    const ownedIds = (canvas.scene.tokens?.contents ?? [])
+      .filter(token => {
+        return token.getFlag(TTM_ID, "spawnedByTileId") === currentTile.id;
+      })
+      .map(token => token.id);
+    const ids = [...new Set([...storedIds, ...ownedIds])]
+      .filter(id => canvas.scene.tokens?.get(id));
+
+    if (ids.length) {
+      await canvas.scene.deleteEmbeddedDocuments("Token", ids, {
+        talkToMeSpawnReset: true
+      });
+    }
+  }
+
   // Lights require manager cleanup so duplicate/legacy AmbientLights are removed.
   if (template === TTM_TEMPLATES.LIGHT) {
     await lightManager.setActive(currentTile, false);
@@ -1544,7 +1891,8 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
   const updates = {
     [`flags.${TTM_ID}.utility.active`]: Boolean(original.active ?? false),
     [`flags.${TTM_ID}.utility.lightOn`]: false,
-    [`flags.${TTM_ID}.utility.ambientLightId`]: ""
+    [`flags.${TTM_ID}.utility.ambientLightId`]: "",
+    [`flags.${TTM_ID}.utility.spawnedTokenIds`]: []
   };
 
   if (inactiveImage) {
@@ -1573,6 +1921,14 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
     "moveOffsetY",
     "moveSpacing",
     "moveAutoRotate",
+    "spawnActorId",
+    "spawnQuantity",
+    "spawnX",
+    "spawnY",
+    "spawnFormation",
+    "spawnSpacing",
+    "spawnHidden",
+    "spawnRemoveOnReset",
     "teleportX",
     "teleportY",
     "teleportOffsetX",
@@ -1585,7 +1941,14 @@ async function resetTalkToMeTileToOriginalState(tileDoc) {
     "activationCooldownEnabled",
     "activationCooldownSeconds",
     "multipleUse",
-    "activationActorTypes"
+    "activationActorTypes",
+    "effectsEnabled",
+    "soundEnabled",
+    "soundFile",
+    "soundVolume",
+    "animationEnabled",
+    "animationType",
+    "animationDuration"
   ]) {
     if (Object.hasOwn(original, key)) {
       updates[`flags.${TTM_ID}.utility.${key}`] = original[key];

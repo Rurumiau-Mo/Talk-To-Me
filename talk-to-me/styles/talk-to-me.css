@@ -66,13 +66,38 @@
 }
 
 #talk-to-me-window .ttm-tabs {
-  display: flex;
-  gap: 0.25rem;
-  margin-bottom: 0.75rem;
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  padding: 0.35rem 0 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  background: inherit;
+}
+
+#talk-to-me-window .ttm-tab-row {
+  display: grid;
+  gap: 0.4rem;
+}
+
+#talk-to-me-window .ttm-tab-row-main {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 #talk-to-me-window .ttm-tab {
-  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  height: auto;
+  padding: 0.34rem 0.45rem;
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 #talk-to-me-window .ttm-tab.active {
@@ -85,7 +110,7 @@
 }
 
 #talk-to-me-window .form-group {
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.38rem;
 }
 
 #talk-to-me-window label {
@@ -117,8 +142,8 @@
 #talk-to-me-window .ttm-card-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.5rem;
+  gap: 0.28rem;
+  margin-top: 0.38rem;
 }
 
 #talk-to-me-window .ttm-primary {
@@ -372,7 +397,7 @@
   position: fixed;
   z-index: 1100;
   width: 520px;
-  max-width: calc(100vw - 32px);
+  max-width: calc(100vw - 20px);
   max-height: 82vh;
   background: #1f1f1f;
   color: #f0f0e0;
@@ -800,4 +825,135 @@
   #talk-to-me-window .ttm-node-target-row {
     grid-template-columns: 1fr;
   }
+}
+
+
+/* Multi-use tile builder */
+#talk-to-me-window .ttm-multi-action-list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0.65rem 0;
+}
+
+#talk-to-me-window .ttm-multi-action-card {
+  padding: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+#talk-to-me-window .ttm-multi-action-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px;
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+#talk-to-me-window .ttm-multi-action-header select,
+#talk-to-me-window .ttm-multi-action-header button {
+  width: 100%;
+  min-width: 0;
+}
+
+#talk-to-me-window .ttm-multi-action-body {
+  display: grid;
+  gap: 0.45rem;
+}
+
+#talk-to-me-window .ttm-multi-action-button {
+  width: 100%;
+  min-height: 40px;
+  padding: 0.55rem 0.75rem;
+  white-space: normal;
+  font-weight: 700;
+}
+
+#talk-to-me-window .ttm-multi-action-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+@media (max-width: 620px) {
+  #talk-to-me-window .ttm-multi-action-buttons,
+  #talk-to-me-window .ttm-multi-action-header {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Wider main TalkToMe window */
+#talk-to-me-window {
+  width: min(660px, calc(100vw - 20px)) !important;
+  max-width: calc(100vw - 32px);
+}
+
+#talk-to-me-window .ttm-body {
+  min-width: 0;
+}
+
+#talk-to-me-window .ttm-tabs-permanent {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 760px) {
+  #talk-to-me-window .ttm-tab-row-main {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #talk-to-me-window .ttm-tab {
+    min-height: 34px;
+  }
+}
+
+
+#talk-to-me-window .ttm-tab-spacer {
+  min-height: 34px;
+}
+
+/* Optional behaviour sections */
+#talk-to-me-window .ttm-optional-section-disabled,
+#talk-to-me-tile-editor-window .ttm-optional-section-disabled {
+  opacity: 0.82;
+}
+
+#talk-to-me-window .ttm-optional-section-disabled > label.checkbox,
+#talk-to-me-tile-editor-window
+  .ttm-optional-section-disabled > label.checkbox {
+  opacity: 1;
+  font-weight: 700;
+  margin-bottom: 0;
+}
+
+@media (max-width: 440px) {
+  #talk-to-me-window .ttm-tab-row-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Checkbox-led optional behaviour sections */
+#talk-to-me-window .ttm-optional-section,
+#talk-to-me-tile-editor-window .ttm-optional-section {
+  margin: 0 0 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+#talk-to-me-window .ttm-optional-section-content,
+#talk-to-me-tile-editor-window .ttm-optional-section-content {
+  margin: 0;
+  padding: 0.5rem 0.65rem 0.4rem;
+  border: 0;
+  background: transparent;
+}
+
+#talk-to-me-window .ttm-optional-section-content > label.checkbox:first-child,
+#talk-to-me-tile-editor-window
+  .ttm-optional-section-content > label.checkbox:first-child {
+  margin: 0;
+  padding: 0.15rem 0;
+  font-weight: 700;
 }

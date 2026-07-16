@@ -12,6 +12,7 @@ import {
 import {
   panToWorldTemporarily
 } from "./speech.js";
+import { playTileEffectsLocal } from "./effects.js";
 
 
 // Visibility refresh state
@@ -246,6 +247,11 @@ export function registerSocket() {
       }
       game.talkToMe?.bubbles?.show?.(data);
       return;
+    }
+
+    if (data.action === "tileEffects") {
+      if (data.senderId === game.user?.id) return false;
+      return playTileEffectsLocal(data);
     }
 
     if (data.action === TTM_SOCKET_ACTIONS.PAN) return panClientToWorld(data);

@@ -12,6 +12,7 @@ import { activateUtilityTemplate, applyUtilityTemplateActions,
   canActivateTileNow,
   runTeleportUtility,
   runNodeGraph,
+  runMultiUseActions,
   toggleLightTile
 } from "./utilities.js";
 
@@ -595,6 +596,26 @@ async triggerSpeechTileByCategory(tileId, category = "manual", tokenLike = null,
   }
 
   return this.triggerSpeechTile(tileId, tokenLike, overrides);
+}
+
+async runMultiUseActions(sourceTileLike, tokenLike = null) {
+  const sourceTileDoc =
+    typeof sourceTileLike === "string"
+      ? canvas.scene?.tiles?.get(sourceTileLike)
+      : sourceTileLike?.document ?? sourceTileLike;
+
+  if (!sourceTileDoc) {
+    return ttmNotice(
+      "warn",
+      "Multi-use source tile not found."
+    );
+  }
+
+  return runMultiUseActions(
+    this,
+    sourceTileDoc,
+    tokenLike
+  );
 }
 
 async runNodeGraph(sourceTileLike, tokenLike = null) {
