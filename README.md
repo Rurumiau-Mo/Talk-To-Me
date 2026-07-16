@@ -3,7 +3,7 @@ A Foundry VTT Module to allow the DM to trigger (manually and with tiles) chat b
 
 Talk To Me is a utility module for Foundry Virtual Tabletop v14 that allows Game Masters to create immersive NPC dialogue using speech bubbles, RollTables, and trigger tiles.
 
-Working alongside Monk's Active Tile Triggers and Tagger, Talk To Me allows GM's to trigger on screen dialogue with tiles and pan to speakers to allow you to manage important hooks and plot points. 
+Working alongside Monk's Active Tile Triggers and Tagger, Talk To Me allows GM's to trigger on screen dialogue with tiles and pan to speakers to allow you to manage important hooks and plot points OR to create ambiance in your worlds. 
 
 
 Features:
