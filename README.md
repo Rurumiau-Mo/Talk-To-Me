@@ -20,7 +20,9 @@ Optional camera pan/zoom to the speaking NPC
 
 Generate macros for quick access
 
-Tiles for: Lighting, Global Lighting, Traps, Teleport, and Tile Reset
+Multi-Use Tiles for: Lighting, Global Lighting, Traps, Teleport, Moving Tokens and Tile Reset
+
+A Node Editor for Tile Chaining
 
 Native Foundry VTT v14 interface
 
@@ -55,10 +57,6 @@ Use the Trigger Tiles tab to place tiles that automatically trigger NPC dialogue
 
 #### Planned features include:
 
-Move Token Tile Template - Working on
-
-Better trigger tiles management
-
 Magic Traps
 
 Magic Triggers
@@ -69,11 +67,7 @@ Portraits (Togglable)
 
 Emotion Options
 
-Conversation chains
-
 Compatibility
-
-Node based tile creation system??????? 
 
 ##### This project is licensed under the Mozilla Public License 2.0 (MPL-2.0).
 
