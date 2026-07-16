@@ -21,6 +21,7 @@ import {
 
 import { generateLeftClickTileMacroScript, generateMattPresetScript, generateTileTriggerScript } from "./macros.js";
 import { resolveToken } from "./speech.js";
+import { activateTileEffects } from "./effects.js";
 import {
   resolveConversationLine,
   playConversationSequence
@@ -31,7 +32,8 @@ import {
   applyUtilityTemplateActions,
   canActivateTileNow,
   runTeleportUtility,
-  runNodeGraph
+  runNodeGraph,
+  runMultiUseActions
 } from "./utilities.js";
 
 export const TTM_MOVEMENT_TRIGGERS = ["enter", "exit"];
@@ -243,6 +245,7 @@ export function templateLabel(template = "speech", trigger = "enter") {
     trap: "Trap Activation",
     teleport: "Teleport Activation",
     moveTokens: "Move Tokens",
+    spawnTokens: "Spawn Tokens",
     reset: "Create Reset Tile"
   };
 
@@ -497,6 +500,13 @@ export async function createSpeechTile({
     "groups",
     "vehicles"
   ],
+  effectsEnabled = false,
+  soundEnabled = false,
+  soundFile = "",
+  soundVolume = 0.8,
+  animationEnabled = false,
+  animationType = "none",
+  animationDuration = 0.7,
   width = 200,
   height = 200,
   clickActivation = "left",
@@ -531,6 +541,14 @@ export async function createSpeechTile({
   moveOffsetY = 0,
   moveSpacing = 100,
   moveAutoRotate = false,
+  spawnActorId = "",
+  spawnQuantity = 1,
+  spawnX = "",
+  spawnY = "",
+  spawnFormation = "grid",
+  spawnSpacing = 100,
+  spawnHidden = false,
+  spawnRemoveOnReset = true,
   teleportSwitchX = "",
   teleportSwitchY = "",
   teleportX = "",
@@ -635,6 +653,15 @@ export async function createSpeechTile({
         moveOffsetY: Number(moveOffsetY ?? 0),
         moveSpacing: Math.max(0, Number(moveSpacing ?? 100)),
         moveAutoRotate,
+        spawnActorId,
+        spawnQuantity: Math.max(1, Math.min(50, Number(spawnQuantity ?? 1))),
+        spawnX,
+        spawnY,
+        spawnFormation,
+        spawnSpacing: Math.max(0, Number(spawnSpacing ?? 100)),
+        spawnHidden,
+        spawnRemoveOnReset,
+        spawnedTokenIds: [],
         teleportSwitchX,
         teleportSwitchY,
         teleportX,
@@ -664,12 +691,38 @@ export async function createSpeechTile({
         )
           ? activationActorTypes
           : ["players", "npcs", "groups", "vehicles"],
+        effectsEnabled,
+        soundEnabled,
+        soundFile,
+        soundVolume: Math.max(
+          0,
+          Math.min(1, Number(soundVolume ?? 0.8))
+        ),
+        animationEnabled,
+        animationType,
+        animationDuration: Math.max(
+          0.15,
+          Number(animationDuration ?? 0.7)
+        ),
         usedOnce: false,
         originalState: {
           active: false,
           image: inactiveImage || textureSrc,
           inactiveImage: inactiveImage || textureSrc,
           activeImage,
+          effectsEnabled,
+          soundEnabled,
+          soundFile,
+          soundVolume: Math.max(
+            0,
+            Math.min(1, Number(soundVolume ?? 0.8))
+          ),
+          animationEnabled,
+          animationType,
+          animationDuration: Math.max(
+            0.15,
+            Number(animationDuration ?? 0.7)
+          ),
           doorWallId,
           doorAction,
           originalDoorState,
@@ -694,6 +747,14 @@ export async function createSpeechTile({
           moveOffsetY: Number(moveOffsetY ?? 0),
           moveSpacing: Math.max(0, Number(moveSpacing ?? 100)),
           moveAutoRotate,
+          spawnActorId,
+          spawnQuantity: Math.max(1, Math.min(50, Number(spawnQuantity ?? 1))),
+          spawnX,
+          spawnY,
+          spawnFormation,
+          spawnSpacing: Math.max(0, Number(spawnSpacing ?? 100)),
+          spawnHidden,
+          spawnRemoveOnReset,
           teleportX,
           teleportY,
           teleportOffsetX,
@@ -861,6 +922,8 @@ export async function triggerSpeechTile(api, tileId, tokenLike = null, overrides
     );
 
     if (result !== false) {
+      await activateTileEffects(doc);
+      await runMultiUseActions(api, doc, tokenLike);
       await runNodeGraph(api, doc, tokenLike);
     }
 
@@ -892,6 +955,8 @@ export async function triggerSpeechTile(api, tileId, tokenLike = null, overrides
     zoomToSpeaker: overrides.zoomToSpeaker ?? flags.zoomToSpeaker
   });
 
+  await activateTileEffects(doc);
+  await runMultiUseActions(api, doc, tokenLike);
   await runNodeGraph(api, doc, tokenLike);
   return true;
 }

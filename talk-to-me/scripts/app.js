@@ -79,6 +79,7 @@ export class TalkToMeApp {
     const pos = ttmWindowPosition();
     root.style.left = pos.left;
     root.style.top = pos.top;
+    root.style.width = "min(660px, calc(100vw - 20px))";
 
     try {
       ttmAdd(root, this.createHeader());
@@ -144,21 +145,39 @@ export class TalkToMeApp {
     `;
     ttmAdd(body, status);
 
-    const nav = ttmMake("nav", null, "ttm-tabs sheet-tabs tabs");
+    const nav = ttmMake(
+      "nav",
+      null,
+      "ttm-tabs ttm-tabs-permanent sheet-tabs tabs"
+    );
+
+    const tabRow = ttmMake(
+      "div",
+      null,
+      "ttm-tab-row ttm-tab-row-main"
+    );
 
     for (const [id, label] of [
       ["speech", "Speech"],
       ["tiles", "Trigger Tiles"],
-      ["nodes", "Node Editor"],
-      ["macros", "Macros"]
+      ["macros", "Macros"],
+      ["nodes", "Node Editor"]
     ]) {
-      const button = ttmMake("button", label, `ttm-tab ${id === this.activeTab ? "active" : ""}`);
+      const button = ttmMake(
+        "button",
+        label,
+        `ttm-tab ${id === this.activeTab ? "active" : ""}`
+      );
       button.type = "button";
       button.dataset.tab = id;
-      button.addEventListener("click", () => this.switchTab(id));
-      ttmAdd(nav, button);
+      button.addEventListener(
+        "click",
+        () => this.switchTab(id)
+      );
+      ttmAdd(tabRow, button);
     }
 
+    ttmAdd(nav, tabRow);
     ttmAdd(body, nav);
 
     const panels = ttmMake("div", null, "ttm-panels");
@@ -194,6 +213,47 @@ export class TalkToMeApp {
 
   createHint(text) {
     return ttmMake("p", text, "notes ttm-hint");
+  }
+
+  makeCollapsibleSection(section, title, open = false) {
+    if (!section) return section;
+
+    const wrapper = ttmMake(
+      "section",
+      null,
+      "ttm-optional-section"
+    );
+    wrapper.dataset.sectionTitle = title;
+    section.classList.add("ttm-optional-section-content");
+    ttmAdd(wrapper, section);
+
+    return wrapper;
+  }
+
+  bindOptionalSection(section, checkboxInput) {
+    if (!section || !checkboxInput) return;
+
+    const update = () => {
+      const enabled = checkboxInput.checked === true;
+      section.classList.toggle(
+        "ttm-optional-section-disabled",
+        !enabled
+      );
+
+      for (const child of Array.from(section.children)) {
+        if (
+          child.contains?.(checkboxInput)
+          || child === checkboxInput
+        ) {
+          continue;
+        }
+
+        child.hidden = !enabled;
+      }
+    };
+
+    checkboxInput.addEventListener("change", update);
+    update();
   }
 
   createTableSelect(id) {
@@ -232,6 +292,26 @@ export class TalkToMeApp {
     return select;
   }
 
+createActorSelect(id) {
+  const select = ttmMake("select");
+  select.id = id;
+
+  const blank = ttmMake("option", "— Choose an Actor —");
+  blank.value = "";
+  ttmAdd(select, blank);
+
+  const actors = Array.from(game.actors ?? [])
+    .sort((left, right) => left.name.localeCompare(right.name));
+
+  for (const actor of actors) {
+    const option = ttmMake("option", actor.name);
+    option.value = actor.id;
+    ttmAdd(select, option);
+  }
+
+  return select;
+}
+
 createTokenMultiSelect(id) {
   const select = ttmMake("select");
   select.id = id;
@@ -266,6 +346,46 @@ createActivationAudienceSelect(id) {
   }
 
   return select;
+}
+
+createAudioPickerField(labelText, input) {
+  const group = ttmMake(
+    "div",
+    null,
+    "form-group ttm-image-picker-group"
+  );
+  const label = ttmMake("label", labelText);
+  const row = ttmMake("div", null, "ttm-image-picker-row");
+  const browse = ttmMake("button", "🔊", "ttm-icon-button");
+
+  browse.type = "button";
+  browse.title = "Browse Foundry audio files";
+
+  browse.addEventListener("click", () => {
+    try {
+      const picker = new FilePicker({
+        type: "audio",
+        current: input.value || "",
+        callback: path => {
+          input.value = path;
+        }
+      });
+
+      picker.render(true);
+    } catch (error) {
+      console.error("TalkToMe audio picker failed:", error);
+      ttmNotice(
+        "error",
+        "Could not open the Foundry audio picker."
+      );
+    }
+  });
+
+  ttmAdd(row, input);
+  ttmAdd(row, browse);
+  ttmAdd(group, label);
+  ttmAdd(group, row);
+  return group;
 }
 
 createImagePickerField(labelText, input) {
@@ -522,7 +642,7 @@ toggleSwitchClickActivation() {
     ttmAdd(panel, this.createHint("Pick a token from the scene, or leave it on auto and select/target a token on the canvas."));
     ttmAdd(panel, tokenName);
     ttmAdd(panel, this.createField("Token", tokenSelect));
-    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"]));
+    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "spawnTokens", "reset"]));
     ttmAdd(panel, this.createField("Custom speech", textArea));
     ttmAdd(panel, this.createField("Custom NPC name", npcName));
     ttmAdd(panel, postChat.label);
@@ -648,6 +768,35 @@ openConversationBuilder() {
     "Multiple use",
     true
   );
+
+  const effectsEnabledEdit = this.createCheckbox(
+    "ttm-edit-effects-enabled",
+    "Sound & Animation",
+    false
+  );
+
+  const soundEnabledEdit = this.createCheckbox(
+    "ttm-edit-sound-enabled",
+    "Play a sound when activated",
+    false
+  );
+  const soundFileEdit = makeInput();
+  const soundVolumeEdit = makeNumber("0.05", 0);
+  soundVolumeEdit.max = 1;
+
+  const animationEnabledEdit = this.createCheckbox(
+    "ttm-edit-animation-enabled",
+    "Animate the tile when activated",
+    false
+  );
+  const animationTypeEdit = makeSelect([
+    ["none", "None"],
+    ["pulse", "Pulse"],
+    ["shake", "Shake"],
+    ["spin", "Spin"],
+    ["fade", "Fade"]
+  ]);
+  const animationDurationEdit = makeNumber("0.05", 0.15);
 
   const cooldownEnabled = this.createCheckbox(
     "ttm-conversation-cooldown-enabled",
@@ -1596,6 +1745,7 @@ pickTilePlacementPoint() {
       ["trap", "Trap Activation"],
       ["teleport", "Teleport Activation"],
       ["moveTokens", "Move Tokens"],
+      ["spawnTokens", "Spawn Tokens"],
       ["reset", "Create Reset Tile"]
     ]) {
       const opt = ttmMake("option", label);
@@ -1619,6 +1769,54 @@ pickTilePlacementPoint() {
     tileImage.id = "ttm-tile-image";
     tileImage.type = "text";
     tileImage.placeholder = "icons/svg/sound.svg or modules/talk-to-me/images/switch.webp";
+
+    const behaviourToggles = {
+      speech: this.createCheckbox(
+        "ttm-enable-speech-behaviour",
+        "Enable Speech behaviour",
+        true
+      ),
+      switch: this.createCheckbox(
+        "ttm-enable-switch-behaviour",
+        "Enable Switch behaviour",
+        false
+      ),
+      light: this.createCheckbox(
+        "ttm-enable-light-behaviour",
+        "Enable Ambient Light behaviour",
+        false
+      ),
+      globalLight: this.createCheckbox(
+        "ttm-enable-global-light-behaviour",
+        "Enable Global Lighting behaviour",
+        false
+      ),
+      trap: this.createCheckbox(
+        "ttm-enable-trap-behaviour",
+        "Enable Trap behaviour",
+        false
+      ),
+      teleport: this.createCheckbox(
+        "ttm-enable-teleport-behaviour",
+        "Enable Teleport behaviour",
+        false
+      ),
+      moveTokens: this.createCheckbox(
+        "ttm-enable-move-behaviour",
+        "Enable Move Tokens behaviour",
+        false
+      ),
+      spawnTokens: this.createCheckbox(
+        "ttm-enable-spawn-behaviour",
+        "Enable Spawn Tokens behaviour",
+        false
+      ),
+      reset: this.createCheckbox(
+        "ttm-enable-reset-behaviour",
+        "Enable Reset behaviour",
+        false
+      )
+    };
 
     const trigger = ttmMake("select");
     trigger.id = "ttm-tile-trigger";
@@ -1926,6 +2124,58 @@ pickTilePlacementPoint() {
       false
     );
 
+    const spawnActor = this.createActorSelect("ttm-spawn-actor");
+    const spawnInactiveImage = ttmMake("input");
+    spawnInactiveImage.type = "text";
+    spawnInactiveImage.placeholder =
+      "Spawner ready/default image path";
+
+    const spawnActiveImage = ttmMake("input");
+    spawnActiveImage.type = "text";
+    spawnActiveImage.placeholder =
+      "Spawner activated image path";
+
+    const spawnQuantity = ttmMake("input");
+    spawnQuantity.type = "number";
+    spawnQuantity.min = 1;
+    spawnQuantity.max = 50;
+    spawnQuantity.step = 1;
+    spawnQuantity.value = 1;
+
+    const spawnX = ttmMake("input");
+    spawnX.type = "number";
+    const spawnY = ttmMake("input");
+    spawnY.type = "number";
+
+    const spawnFormation = ttmMake("select");
+    for (const [value, label] of [
+      ["single", "Single point"],
+      ["grid", "Grid"],
+      ["circle", "Circle"],
+      ["random", "Random area"]
+    ]) {
+      const option = ttmMake("option", label);
+      option.value = value;
+      ttmAdd(spawnFormation, option);
+    }
+    spawnFormation.value = "grid";
+
+    const spawnSpacing = ttmMake("input");
+    spawnSpacing.type = "number";
+    spawnSpacing.min = 0;
+    spawnSpacing.value = canvas.grid?.size ?? 100;
+
+    const spawnHidden = this.createCheckbox(
+      "ttm-spawn-hidden",
+      "Spawn tokens hidden",
+      false
+    );
+    const spawnRemoveOnReset = this.createCheckbox(
+      "ttm-spawn-remove-on-reset",
+      "Remove spawned tokens when reset",
+      true
+    );
+
     const teleportSwitchX = ttmMake("input");
     teleportSwitchX.type = "number";
     teleportSwitchX.placeholder = "Auto-filled from placed tile";
@@ -2009,6 +2259,52 @@ pickTilePlacementPoint() {
         "ttm-activation-audience"
       );
 
+    const effectsEnabled = this.createCheckbox(
+      "ttm-effects-enabled",
+      "Sound & Animation",
+      false
+    );
+
+    const soundEnabled = this.createCheckbox(
+      "ttm-sound-enabled",
+      "Play a sound when activated",
+      false
+    );
+    const soundFile = ttmMake("input");
+    soundFile.type = "text";
+    soundFile.placeholder = "Audio file path";
+
+    const soundVolume = ttmMake("input");
+    soundVolume.type = "number";
+    soundVolume.min = 0;
+    soundVolume.max = 1;
+    soundVolume.step = 0.05;
+    soundVolume.value = 0.8;
+
+    const animationEnabled = this.createCheckbox(
+      "ttm-animation-enabled",
+      "Animate the tile when activated",
+      false
+    );
+    const animationType = ttmMake("select");
+    for (const [value, label] of [
+      ["none", "None"],
+      ["pulse", "Pulse"],
+      ["shake", "Shake"],
+      ["spin", "Spin"],
+      ["fade", "Fade"]
+    ]) {
+      const option = ttmMake("option", label);
+      option.value = value;
+      ttmAdd(animationType, option);
+    }
+
+    const animationDuration = ttmMake("input");
+    animationDuration.type = "number";
+    animationDuration.min = 0.15;
+    animationDuration.step = 0.05;
+    animationDuration.value = 0.7;
+
     const activationCooldownSeconds = ttmMake("input");
     activationCooldownSeconds.id = "ttm-activation-cooldown-seconds";
     activationCooldownSeconds.type = "number";
@@ -2025,11 +2321,11 @@ pickTilePlacementPoint() {
     const makeGroup = (title, templates) => {
       const group = ttmMake("section", null, "ttm-template-group");
       group.dataset.templates = templates.join(",");
-      ttmAdd(group, ttmMake("h3", title));
+      group.dataset.groupTitle = title;
       return group;
     };
 
-    const basicGroup = makeGroup("Basic Tile Setup", ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"]);
+    const basicGroup = makeGroup("Basic Tile Setup", ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "spawnTokens", "reset"]);
     ttmAdd(basicGroup, this.createField("Template", template));
     ttmAdd(basicGroup, this.createField("Tile name", name));
     ttmAdd(basicGroup, this.createField("Trigger", trigger));
@@ -2057,21 +2353,71 @@ pickTilePlacementPoint() {
       basicGroup,
       this.createField("Pause after activation (seconds)", activationCooldownSeconds)
     );
+    ttmAdd(
+      basicGroup,
+      this.createField("Click activation", clickActivation)
+    );
+    ttmAdd(
+      basicGroup,
+      this.createField("Clickable hotspot size", hotspotSize)
+    );
+    ttmAdd(
+      basicGroup,
+      this.createField("Hotspot offset X", hotspotOffsetX)
+    );
+    ttmAdd(
+      basicGroup,
+      this.createField("Hotspot offset Y", hotspotOffsetY)
+    );
 
-    const universalTriggerGroup = makeGroup("Switch Activated Trigger Options", ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"]);
-    universalTriggerGroup.dataset.triggerOnly = "switch";
-    ttmAdd(universalTriggerGroup, this.createHint("These options appear whenever Trigger is set to Switch activated, regardless of template."));
-    ttmAdd(universalTriggerGroup, this.createField("Click activation", clickActivation));
-
-    const hotspotOptionsGroup = makeGroup("Clickable Hotspot Options", ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"]);
-    hotspotOptionsGroup.dataset.triggerOnly = "switch";
-    hotspotOptionsGroup.dataset.requiresVisibleTile = "true";
-    ttmAdd(hotspotOptionsGroup, this.createHint("Hotspot options only matter when the tile is visible and activated by click."));
-    ttmAdd(hotspotOptionsGroup, this.createField("Hotspot size", hotspotSize));
-    ttmAdd(hotspotOptionsGroup, this.createField("Hotspot offset X", hotspotOffsetX));
-    ttmAdd(hotspotOptionsGroup, this.createField("Hotspot offset Y", hotspotOffsetY));
+    const effectsGroup = makeGroup(
+      "Sound & Animation",
+      [
+        "speech",
+        "switch",
+        "light",
+        "globalLight",
+        "trap",
+        "teleport",
+        "moveTokens",
+        "spawnTokens",
+        "reset"
+      ]
+    );
+    ttmAdd(effectsGroup, effectsEnabled.label);
+    ttmAdd(effectsGroup, soundEnabled.label);
+    ttmAdd(
+      effectsGroup,
+      this.createAudioPickerField(
+        "Activation sound",
+        soundFile
+      )
+    );
+    ttmAdd(
+      effectsGroup,
+      this.createField("Sound volume (0-1)", soundVolume)
+    );
+    ttmAdd(effectsGroup, animationEnabled.label);
+    ttmAdd(
+      effectsGroup,
+      this.createField("Tile animation", animationType)
+    );
+    ttmAdd(
+      effectsGroup,
+      this.createField(
+        "Animation duration (seconds)",
+        animationDuration
+      )
+    );
+    ttmAdd(
+      effectsGroup,
+      this.createHint(
+        "Sounds and animations play for the GM and connected players."
+      )
+    );
 
     const speechGroup = makeGroup("Speech Bubble Options", ["speech"]);
+    ttmAdd(speechGroup, behaviourToggles.speech.label);
     ttmAdd(speechGroup, this.createImagePickerField("Speech tile image", tileImage));
     ttmAdd(speechGroup, this.createField("Speech source", mode));
 
@@ -2177,6 +2523,7 @@ pickTilePlacementPoint() {
     ttmAdd(speechGroup, zoomToSpeaker.label);
 
     const switchGroup = makeGroup("Switch Options", ["switch"]);
+    ttmAdd(switchGroup, behaviourToggles.switch.label);
     ttmAdd(switchGroup, this.createImagePickerField("Inactive/default image", inactiveImage));
     ttmAdd(switchGroup, this.createImagePickerField("Active image", activeImage));
     ttmAdd(switchGroup, this.createWallPickerField("Door wall id", doorWallId));
@@ -2184,6 +2531,7 @@ pickTilePlacementPoint() {
     ttmAdd(switchGroup, this.createTilePickerField("Linked tile ID", targetTileId));
 
     const lightGroup = makeGroup("Light Options", ["light"]);
+    ttmAdd(lightGroup, behaviourToggles.light.label);
     ttmAdd(lightGroup, this.createField("Light dim radius", lightDim));
     ttmAdd(lightGroup, this.createField("Light bright radius", lightBright));
     ttmAdd(lightGroup, this.createColourPickerField("Light colour", lightColor));
@@ -2195,6 +2543,7 @@ pickTilePlacementPoint() {
       "Environment: Global Lighting",
       ["globalLight"]
     );
+    ttmAdd(globalLightGroup, behaviourToggles.globalLight.label);
     ttmAdd(globalLightGroup, this.createField("Action", globalLightAction));
     ttmAdd(globalLightGroup, this.createField("Darkness level (0-1)", globalDarkness));
     ttmAdd(globalLightGroup, globalLightColorOverride.label);
@@ -2218,6 +2567,7 @@ pickTilePlacementPoint() {
     ));
 
     const trapGroup = makeGroup("Trap Options", ["trap"]);
+    ttmAdd(trapGroup, behaviourToggles.trap.label);
     ttmAdd(trapGroup, this.createField("Target", trapTarget));
     ttmAdd(trapGroup, this.createField("Trap save ability", saveAbility));
     ttmAdd(trapGroup, this.createField("Trap save DC", saveDC));
@@ -2229,6 +2579,7 @@ pickTilePlacementPoint() {
       "Move Tokens Options",
       ["moveTokens"]
     );
+    ttmAdd(moveTokensGroup, behaviourToggles.moveTokens.label);
     ttmAdd(
       moveTokensGroup,
       this.createField("Tokens to move", moveTargetMode)
@@ -2289,7 +2640,44 @@ pickTilePlacementPoint() {
     );
     updateMoveNpcVisibility();
 
+    const spawnTokensGroup = makeGroup(
+      "Spawn Tokens Options",
+      ["spawnTokens"]
+    );
+    ttmAdd(spawnTokensGroup, behaviourToggles.spawnTokens.label);
+    ttmAdd(
+      spawnTokensGroup,
+      this.createImagePickerField(
+        "Inactive/default tile image",
+        spawnInactiveImage
+      )
+    );
+    ttmAdd(
+      spawnTokensGroup,
+      this.createImagePickerField(
+        "Active tile image",
+        spawnActiveImage
+      )
+    );
+    ttmAdd(spawnTokensGroup, this.createField("Actor to spawn", spawnActor));
+    ttmAdd(spawnTokensGroup, this.createField("Quantity", spawnQuantity));
+    ttmAdd(
+      spawnTokensGroup,
+      this.createCanvasPointPickerField("Spawn location", spawnX, spawnY)
+    );
+    ttmAdd(spawnTokensGroup, this.createField("Formation", spawnFormation));
+    ttmAdd(spawnTokensGroup, this.createField("Spacing (pixels)", spawnSpacing));
+    ttmAdd(spawnTokensGroup, spawnHidden.label);
+    ttmAdd(spawnTokensGroup, spawnRemoveOnReset.label);
+    ttmAdd(
+      spawnTokensGroup,
+      this.createHint(
+        "Tokens use the selected Actor's prototype token. Node Editor, cooldown, and single-use controls work normally."
+      )
+    );
+
     const teleportGroup = makeGroup("Teleport Options", ["teleport"]);
+    ttmAdd(teleportGroup, behaviourToggles.teleport.label);
     ttmAdd(teleportGroup, this.createField("Switch location X", teleportSwitchX));
     ttmAdd(teleportGroup, this.createField("Switch location Y", teleportSwitchY));
     ttmAdd(teleportGroup, this.createCanvasPointPickerField("Teleport end location", teleportX, teleportY));
@@ -2302,12 +2690,26 @@ pickTilePlacementPoint() {
     ttmAdd(teleportGroup, teleportUseCooldown.label);
     ttmAdd(teleportGroup, this.createField("Token cooldown seconds", teleportCooldownSeconds));
     ttmAdd(teleportGroup, teleportAvoidTiles.label);
+  ttmAdd(teleportGroup, teleportCreateReturn.label);
+  ttmAdd(
+    teleportGroup,
+    this.createField("Activation hotspot size", hotspotSize)
+  );
+  ttmAdd(
+    teleportGroup,
+    this.createField("Activation hotspot offset X", hotspotOffsetX)
+  );
+  ttmAdd(
+    teleportGroup,
+    this.createField("Activation hotspot offset Y", hotspotOffsetY)
+  );
     ttmAdd(teleportGroup, this.createHint("Advanced: create a matching return tile at the teleport destination."));
     ttmAdd(teleportGroup, teleportCreateReturn.label);
     ttmAdd(teleportGroup, this.createImagePickerField("Inactive/default image", teleportInactiveImage));
     ttmAdd(teleportGroup, this.createImagePickerField("Active image", teleportActiveImage));
 
     const resetGroup = makeGroup("Reset Tile Options", ["reset"]);
+    ttmAdd(resetGroup, behaviourToggles.reset.label);
     ttmAdd(resetGroup, this.createHint("This tile resets TalkToMe utility tiles in the current scene back to their inactive/default state."));
     ttmAdd(resetGroup, this.createImagePickerField("Inactive/default image", resetInactiveImage));
     ttmAdd(resetGroup, this.createImagePickerField("Active image", resetActiveImage));
@@ -2385,6 +2787,21 @@ pickTilePlacementPoint() {
           ui.notifications.warn(
             "Select at least one NPC for the Move Tokens tile."
           );
+          return;
+        }
+      }
+
+      if (template.value === "spawnTokens") {
+        if (!spawnActor.value) {
+          ui.notifications.warn("Choose an Actor to spawn.");
+          return;
+        }
+
+        if (
+          !Number.isFinite(Number(spawnX.value))
+          || !Number.isFinite(Number(spawnY.value))
+        ) {
+          ui.notifications.warn("Choose a valid spawn location.");
           return;
         }
       }
@@ -2471,6 +2888,23 @@ pickTilePlacementPoint() {
         activationActorTypes: Array.from(
           activationAudience.selectedOptions
         ).map(option => option.value),
+        effectsEnabled: effectsEnabled.input.checked,
+        soundEnabled:
+          effectsEnabled.input.checked
+          && soundEnabled.input.checked,
+        soundFile: soundFile.value.trim(),
+        soundVolume: Math.max(
+          0,
+          Math.min(1, Number(soundVolume.value || 0.8))
+        ),
+        animationEnabled:
+          effectsEnabled.input.checked
+          && animationEnabled.input.checked,
+        animationType: animationType.value,
+        animationDuration: Math.max(
+          0.15,
+          Number(animationDuration.value || 0.7)
+        ),
         activationCooldownEnabled: activationCooldownEnabled.input.checked,
         activationCooldownSeconds: Math.max(
           0.2,
@@ -2490,9 +2924,11 @@ pickTilePlacementPoint() {
                 ? trapActiveImage.value.trim()
                 : template.value === "teleport"
                   ? teleportActiveImage.value.trim()
-                  : template.value === "reset"
-                    ? resetActiveImage.value.trim()
-                    : activeImage.value.trim(),
+                  : template.value === "spawnTokens"
+                    ? spawnActiveImage.value.trim()
+                    : template.value === "reset"
+                      ? resetActiveImage.value.trim()
+                      : activeImage.value.trim(),
         inactiveImage:
           template.value === "light"
             ? lightInactiveImage.value.trim()
@@ -2502,9 +2938,11 @@ pickTilePlacementPoint() {
                 ? trapInactiveImage.value.trim()
                 : template.value === "teleport"
                   ? teleportInactiveImage.value.trim()
-                  : template.value === "reset"
-                    ? resetInactiveImage.value.trim()
-                    : inactiveImage.value.trim(),
+                  : template.value === "spawnTokens"
+                    ? spawnInactiveImage.value.trim()
+                    : template.value === "reset"
+                      ? resetInactiveImage.value.trim()
+                      : inactiveImage.value.trim(),
         doorWallId: doorWallId.value.trim(),
         doorAction: doorAction.value,
         targetTileId: targetTileId.value.trim(),
@@ -2534,6 +2972,14 @@ pickTilePlacementPoint() {
         moveOffsetY: Number(moveOffsetY.value || 0),
         moveSpacing: Math.max(0, Number(moveSpacing.value || 0)),
         moveAutoRotate: moveAutoRotate.input.checked,
+        spawnActorId: spawnActor.value,
+        spawnQuantity: Math.max(1, Math.min(50, Number(spawnQuantity.value || 1))),
+        spawnX: spawnX.value,
+        spawnY: spawnY.value,
+        spawnFormation: spawnFormation.value,
+        spawnSpacing: Math.max(0, Number(spawnSpacing.value || 0)),
+        spawnHidden: spawnHidden.input.checked,
+        spawnRemoveOnReset: spawnRemoveOnReset.input.checked,
         teleportSwitchX: teleportSwitchX.value,
         teleportSwitchY: teleportSwitchY.value,
         teleportX: teleportX.value,
@@ -2551,7 +2997,104 @@ pickTilePlacementPoint() {
         hotspotOffsetY: Number(hotspotOffsetY.value || 0)
       });
 
-      if (doc) this.refreshManagedTileList();
+      if (doc) {
+        const actions = [];
+        const addAction = (key, data) => {
+          if (
+            key !== template.value
+            && behaviourToggles[key]?.input.checked
+          ) {
+            actions.push({ template: key, ...data });
+          }
+        };
+
+        addAction("speech", {
+          mode: mode.value === "custom" ? "custom" : "table",
+          text: text.value.trim(),
+          tableId: tableSelect.value,
+          tokenId: subjectToken.value,
+          npcName: npc.value.trim()
+        });
+        addAction("switch", {
+          doorWallId: doorWallId.value.trim(),
+          doorAction: doorAction.value
+        });
+        addAction("light", {
+          lightDim: Number(lightDim.value || 20),
+          lightBright: Number(lightBright.value || 10),
+          lightColor: lightColor.value.trim() || "#ffffff",
+          lightAlpha: Number(lightAlpha.value || 0.5)
+        });
+        addAction("globalLight", {
+          globalLightAction: globalLightAction.value,
+          globalDarkness: Math.max(
+            0,
+            Math.min(1, Number(globalDarkness.value || 0.75))
+          )
+        });
+        addAction("trap", {
+          saveAbility: saveAbility.value,
+          saveDC: Number(saveDC.value || 10),
+          trapTarget: trapTarget.value
+        });
+        addAction("teleport", {
+          teleportX: teleportX.value,
+          teleportY: teleportY.value,
+          teleportOffsetX: Number(teleportOffsetX.value || 0),
+          teleportOffsetY: Number(teleportOffsetY.value || 0),
+          teleportAvoidTiles: teleportAvoidTiles.input.checked,
+          teleportUseCooldown: teleportUseCooldown.input.checked,
+          teleportCooldownSeconds: Number(
+            teleportCooldownSeconds.value || 0
+          )
+        });
+        addAction("moveTokens", {
+          moveDestinationX: moveDestinationX.value,
+          moveDestinationY: moveDestinationY.value,
+          moveRoute: (() => {
+            try {
+              const parsed = JSON.parse(moveRoute.value || "[]");
+              return Array.isArray(parsed) ? parsed : [];
+            } catch {
+              return [];
+            }
+          })(),
+          moveTargetMode: moveTargetMode.value,
+          moveTokenIds: Array.from(
+            moveNpcTokens.selectedOptions
+          ).map(option => option.value),
+          moveOffsetX: Number(moveOffsetX.value || 0),
+          moveOffsetY: Number(moveOffsetY.value || 0),
+          moveSpacing: Math.max(0, Number(moveSpacing.value || 0)),
+          moveAutoRotate: moveAutoRotate.input.checked
+        });
+        addAction("spawnTokens", {
+          spawnActorId: spawnActor.value,
+          spawnQuantity: Math.max(
+            1,
+            Math.min(50, Number(spawnQuantity.value || 1))
+          ),
+          spawnX: spawnX.value,
+          spawnY: spawnY.value,
+          spawnFormation: spawnFormation.value,
+          spawnSpacing: Math.max(0, Number(spawnSpacing.value || 0)),
+          spawnHidden: spawnHidden.input.checked,
+          spawnRemoveOnReset: spawnRemoveOnReset.input.checked
+        });
+        addAction("reset", {});
+
+        if (actions.length) {
+          await doc.setFlag(TTM_ID, "multiUse", {
+            enabled: true,
+            mode: "sequence",
+            actions
+          });
+        } else {
+          await doc.unsetFlag(TTM_ID, "multiUse");
+        }
+
+        this.refreshManagedTileList();
+      }
     });
 
     const refresh = ttmMake("button", "Refresh List");
@@ -2573,11 +3116,11 @@ const updateTemplateVisibility = () => {
     const templates = String(group.dataset.templates || "").split(",");
     const triggerOnly = group.dataset.triggerOnly;
 
-    const templateMatches = templates.includes(selected);
+    const templateMatches = true;
     const triggerMatches =
       !triggerOnly || triggerOnly === selectedTrigger;
 
-    group.hidden = !(templateMatches && triggerMatches);
+    group.hidden = !triggerMatches;
   }
 
   for (const group of panel.querySelectorAll(
@@ -2588,7 +3131,7 @@ const updateTemplateVisibility = () => {
     ).split(",");
 
     group.hidden =
-      selected !== "speech"
+      !behaviourToggles.speech.input.checked
       || !sources.includes(speechSource);
   }
 
@@ -2600,12 +3143,35 @@ const updateTemplateVisibility = () => {
     ).split(",");
 
     field.hidden =
-      selected !== "speech"
+      !behaviourToggles.speech.input.checked
       || !supportedSources.includes(speechSource);
   }
 };
 
-    template.addEventListener("change", updateTemplateVisibility);
+    const synchronisePrimaryBehaviour = () => {
+      for (const [key, toggle] of Object.entries(behaviourToggles)) {
+        if (key === template.value) {
+          toggle.input.checked = true;
+          toggle.input.disabled = true;
+        } else {
+          toggle.input.disabled = false;
+        }
+
+        toggle.input.dispatchEvent(
+          new Event("change")
+        );
+      }
+      updateTemplateVisibility();
+    };
+
+    for (const toggle of Object.values(behaviourToggles)) {
+      toggle.input.addEventListener(
+        "change",
+        updateTemplateVisibility
+      );
+    }
+
+    template.addEventListener("change", synchronisePrimaryBehaviour);
     trigger.addEventListener("change", updateTemplateVisibility);
     mode.addEventListener("change", updateTemplateVisibility);
     const updateCooldownField = () => {
@@ -2622,22 +3188,63 @@ const updateTemplateVisibility = () => {
 
     ttmAdd(panel, this.createHint("Choose a template to show only the relevant setup options."));
     ttmAdd(panel, basicGroup);
-    ttmAdd(panel, universalTriggerGroup);
-    ttmAdd(panel, hotspotOptionsGroup);
-    ttmAdd(panel, speechGroup);
-    ttmAdd(panel, switchGroup);
-    ttmAdd(panel, lightGroup);
-    ttmAdd(panel, globalLightGroup);
-    ttmAdd(panel, trapGroup);
-    ttmAdd(panel, teleportGroup);
-    ttmAdd(panel, moveTokensGroup);
-    ttmAdd(panel, resetGroup);
+    ttmAdd(panel, this.makeCollapsibleSection(effectsGroup, "Sound & Animation", false));
+    ttmAdd(panel, this.makeCollapsibleSection(speechGroup, "Speech", true));
+    ttmAdd(panel, this.makeCollapsibleSection(switchGroup, "Switch", false));
+    ttmAdd(panel, this.makeCollapsibleSection(lightGroup, "Ambient Light", false));
+    ttmAdd(panel, this.makeCollapsibleSection(globalLightGroup, "Global Lighting", false));
+    ttmAdd(panel, this.makeCollapsibleSection(trapGroup, "Trap", false));
+    ttmAdd(panel, this.makeCollapsibleSection(teleportGroup, "Teleport", false));
+    ttmAdd(panel, this.makeCollapsibleSection(moveTokensGroup, "Movement", false));
+    ttmAdd(panel, this.makeCollapsibleSection(spawnTokensGroup, "Spawning", false));
+    ttmAdd(panel, this.makeCollapsibleSection(resetGroup, "Reset", false));
     ttmAdd(panel, buttons);
     ttmAdd(panel, ttmMake("hr"));
 
 
+    this.bindOptionalSection(
+      effectsGroup,
+      effectsEnabled.input
+    );
+    this.bindOptionalSection(
+      speechGroup,
+      behaviourToggles.speech.input
+    );
+    this.bindOptionalSection(
+      switchGroup,
+      behaviourToggles.switch.input
+    );
+    this.bindOptionalSection(
+      lightGroup,
+      behaviourToggles.light.input
+    );
+    this.bindOptionalSection(
+      globalLightGroup,
+      behaviourToggles.globalLight.input
+    );
+    this.bindOptionalSection(
+      trapGroup,
+      behaviourToggles.trap.input
+    );
+    this.bindOptionalSection(
+      teleportGroup,
+      behaviourToggles.teleport.input
+    );
+    this.bindOptionalSection(
+      moveTokensGroup,
+      behaviourToggles.moveTokens.input
+    );
+    this.bindOptionalSection(
+      spawnTokensGroup,
+      behaviourToggles.spawnTokens.input
+    );
+    this.bindOptionalSection(
+      resetGroup,
+      behaviourToggles.reset.input
+    );
+
     setTimeout(() => {
-      updateTemplateVisibility();
+      synchronisePrimaryBehaviour();
       updateCooldownField();
     }, 0);
 
@@ -3092,8 +3699,39 @@ createTileEditorBox() {
     ["trap", "Trap Activation"],
     ["teleport", "Teleport Activation"],
     ["moveTokens", "Move Tokens"],
+    ["spawnTokens", "Spawn Tokens"],
     ["reset", "Reset Tile"]
   ]);
+  const behaviourTogglesEdit = {
+    speech: this.createCheckbox(
+      "ttm-edit-enable-speech", "Enable Speech behaviour", true
+    ),
+    switch: this.createCheckbox(
+      "ttm-edit-enable-switch", "Enable Switch behaviour", false
+    ),
+    light: this.createCheckbox(
+      "ttm-edit-enable-light", "Enable Ambient Light behaviour", false
+    ),
+    globalLight: this.createCheckbox(
+      "ttm-edit-enable-global-light", "Enable Global Lighting behaviour", false
+    ),
+    trap: this.createCheckbox(
+      "ttm-edit-enable-trap", "Enable Trap behaviour", false
+    ),
+    teleport: this.createCheckbox(
+      "ttm-edit-enable-teleport", "Enable Teleport behaviour", false
+    ),
+    moveTokens: this.createCheckbox(
+      "ttm-edit-enable-move", "Enable Move Tokens behaviour", false
+    ),
+    spawnTokens: this.createCheckbox(
+      "ttm-edit-enable-spawn", "Enable Spawn Tokens behaviour", false
+    ),
+    reset: this.createCheckbox(
+      "ttm-edit-enable-reset", "Enable Reset behaviour", false
+    )
+  };
+
   const trigger = makeSelect([
     ["enter", "Token enters tile"],
     ["exit", "Token exits tile"],
@@ -3129,6 +3767,25 @@ createTileEditorBox() {
   const lightBright = makeNumber();
   const lightColor = makeInput();
   const lightAlpha = makeNumber("0.1");
+  const lightAnimation = makeSelect([
+    ["", "None"],
+    ["torch", "Torch"],
+    ["pulse", "Pulse"],
+    ["chroma", "Chroma"],
+    ["wave", "Wave"],
+    ["fog", "Fog"],
+    ["sunburst", "Sunburst"],
+    ["dome", "Dome"],
+    ["emanation", "Emanation"],
+    ["hexa", "Hexa"],
+    ["ghost", "Ghost"],
+    ["energy", "Energy"],
+    ["roiling", "Roiling"],
+    ["hole", "Black Hole"],
+    ["vortex", "Vortex"],
+    ["bewitching", "Bewitching"],
+    ["smokepatch", "Smoke Patch"]
+  ]);
 
   const globalLightAction = makeSelect([
     ["on", "Fade to Day"],
@@ -3181,6 +3838,29 @@ createTileEditorBox() {
     false
   );
 
+  const spawnActorEdit = this.createActorSelect("ttm-edit-spawn-actor");
+  const spawnQuantityEdit = makeNumber("1", 1);
+  spawnQuantityEdit.max = 50;
+  const spawnXEdit = makeNumber();
+  const spawnYEdit = makeNumber();
+  const spawnFormationEdit = makeSelect([
+    ["single", "Single point"],
+    ["grid", "Grid"],
+    ["circle", "Circle"],
+    ["random", "Random area"]
+  ]);
+  const spawnSpacingEdit = makeNumber("1", 0);
+  const spawnHiddenEdit = this.createCheckbox(
+    "ttm-edit-spawn-hidden",
+    "Spawn tokens hidden",
+    false
+  );
+  const spawnRemoveOnResetEdit = this.createCheckbox(
+    "ttm-edit-spawn-remove-on-reset",
+    "Remove spawned tokens when reset",
+    true
+  );
+
   const teleportX = makeNumber();
   const teleportY = makeNumber();
   const teleportOffsetX = makeNumber();
@@ -3203,6 +3883,33 @@ createTileEditorBox() {
     "Prevent landing on teleport tiles",
     true
   );
+
+  const teleportCreateReturn = this.createCheckbox(
+    "ttm-edit-teleport-create-return",
+    "Create a return teleport tile",
+    false
+  );
+  const hotspotSize = makeNumber("1", 1);
+  const hotspotOffsetX = makeNumber("1");
+  const hotspotOffsetY = makeNumber("1");
+
+  const nodeGraphModeEdit = makeSelect([
+    ["sequence", "Run targets in sequence"],
+    ["parallel", "Run all targets together"]
+  ]);
+  const nodeGraphTargetsEdit = ttmMake("textarea");
+  nodeGraphTargetsEdit.rows = 5;
+  nodeGraphTargetsEdit.placeholder =
+    "One target per line: TILE_ID | delay seconds";
+
+  const multiUseModeEdit = makeSelect([
+    ["sequence", "Run extra actions in sequence"],
+    ["parallel", "Run extra actions together"]
+  ]);
+  const multiUseActionsEdit = ttmMake("textarea");
+  multiUseActionsEdit.rows = 10;
+  multiUseActionsEdit.placeholder =
+    "JSON array of multi-use actions";
 
   const speechMode = makeSelect([
     ["table", "Roll from table"],
@@ -3325,12 +4032,12 @@ createTileEditorBox() {
   const makeGroup = (title, templates = []) => {
     const group = ttmMake("section", null, "ttm-editor-template-group");
     group.dataset.templates = templates.join(",");
-    ttmAdd(group, ttmMake("h3", title));
+    group.dataset.groupTitle = title;
     return group;
   };
 
   const commonGroup = makeGroup("Common Settings", [
-    "speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"
+    "speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "spawnTokens", "reset"
   ]);
   ttmAdd(commonGroup, this.createField("Tile name", name));
   ttmAdd(commonGroup, this.createField("Template", template));
@@ -3374,7 +4081,48 @@ createTileEditorBox() {
     cooldownSeconds
   ));
 
+  const effectsGroupEdit = makeGroup(
+    "Sound & Animation",
+    [
+      "speech",
+      "switch",
+      "light",
+      "globalLight",
+      "trap",
+      "teleport",
+      "moveTokens",
+      "spawnTokens",
+      "reset"
+    ]
+  );
+  ttmAdd(effectsGroupEdit, effectsEnabledEdit.label);
+  ttmAdd(effectsGroupEdit, soundEnabledEdit.label);
+  ttmAdd(
+    effectsGroupEdit,
+    this.createAudioPickerField(
+      "Activation sound",
+      soundFileEdit
+    )
+  );
+  ttmAdd(
+    effectsGroupEdit,
+    this.createField("Sound volume (0-1)", soundVolumeEdit)
+  );
+  ttmAdd(effectsGroupEdit, animationEnabledEdit.label);
+  ttmAdd(
+    effectsGroupEdit,
+    this.createField("Tile animation", animationTypeEdit)
+  );
+  ttmAdd(
+    effectsGroupEdit,
+    this.createField(
+      "Animation duration (seconds)",
+      animationDurationEdit
+    )
+  );
+
   const speechGroup = makeGroup("Speech Settings", ["speech"]);
+  ttmAdd(speechGroup, behaviourTogglesEdit.speech.label);
   ttmAdd(speechGroup, this.createField("Speech source", speechMode));
 
   const standardSpeechEditorGroup = ttmMake(
@@ -3500,12 +4248,23 @@ createTileEditorBox() {
   ttmAdd(speechGroup, zoomToSpeaker.label);
 
   const switchGroup = makeGroup("Switch Settings", ["switch"]);
+  ttmAdd(switchGroup, behaviourTogglesEdit.switch.label);
   ttmAdd(switchGroup, this.createField("Door Wall ID", doorWallId));
   ttmAdd(switchGroup, this.createField("Door action", doorAction));
 
   const linkedGroup = makeGroup(
     "Linked Tile",
-    ["switch", "light", "trap", "teleport", "reset"]
+    [
+      "speech",
+      "switch",
+      "light",
+      "globalLight",
+      "trap",
+      "teleport",
+      "moveTokens",
+      "spawnTokens",
+      "reset"
+    ]
   );
   ttmAdd(linkedGroup, this.createTilePickerField(
     "Linked Tile ID",
@@ -3513,15 +4272,18 @@ createTileEditorBox() {
   ));
 
   const lightGroup = makeGroup("Light Settings", ["light"]);
+  ttmAdd(lightGroup, behaviourTogglesEdit.light.label);
   ttmAdd(lightGroup, this.createField("Dim radius", lightDim));
   ttmAdd(lightGroup, this.createField("Bright radius", lightBright));
   ttmAdd(lightGroup, this.createField("Colour", lightColor));
   ttmAdd(lightGroup, this.createField("Alpha", lightAlpha));
+  ttmAdd(lightGroup, this.createField("Animation", lightAnimation));
 
   const globalLightGroup = makeGroup(
     "Environment: Global Lighting",
     ["globalLight"]
   );
+  ttmAdd(globalLightGroup, behaviourTogglesEdit.globalLight.label);
   ttmAdd(globalLightGroup, this.createField("Action", globalLightAction));
   ttmAdd(globalLightGroup, this.createField("Darkness level (0-1)", globalDarkness));
   ttmAdd(globalLightGroup, globalLightColorOverride.label);
@@ -3534,6 +4296,7 @@ createTileEditorBox() {
   );
 
   const trapGroup = makeGroup("Trap Settings", ["trap"]);
+  ttmAdd(trapGroup, behaviourTogglesEdit.trap.label);
   ttmAdd(trapGroup, this.createField("Save ability", saveAbility));
   ttmAdd(trapGroup, this.createField("Save DC", saveDC));
   ttmAdd(trapGroup, this.createField("Target mode", trapTarget));
@@ -3542,6 +4305,7 @@ createTileEditorBox() {
     "Move Tokens Settings",
     ["moveTokens"]
   );
+  ttmAdd(moveTokensGroup, behaviourTogglesEdit.moveTokens.label);
   ttmAdd(
     moveTokensGroup,
     this.createField("Tokens to move", moveTargetMode)
@@ -3581,7 +4345,24 @@ createTileEditorBox() {
   );
   ttmAdd(moveTokensGroup, moveAutoRotateEdit.label);
 
+  const spawnTokensGroup = makeGroup(
+    "Spawn Tokens Settings",
+    ["spawnTokens"]
+  );
+  ttmAdd(spawnTokensGroup, behaviourTogglesEdit.spawnTokens.label);
+  ttmAdd(spawnTokensGroup, this.createField("Actor to spawn", spawnActorEdit));
+  ttmAdd(spawnTokensGroup, this.createField("Quantity", spawnQuantityEdit));
+  ttmAdd(
+    spawnTokensGroup,
+    this.createCanvasPointPickerField("Spawn location", spawnXEdit, spawnYEdit)
+  );
+  ttmAdd(spawnTokensGroup, this.createField("Formation", spawnFormationEdit));
+  ttmAdd(spawnTokensGroup, this.createField("Spacing (pixels)", spawnSpacingEdit));
+  ttmAdd(spawnTokensGroup, spawnHiddenEdit.label);
+  ttmAdd(spawnTokensGroup, spawnRemoveOnResetEdit.label);
+
   const teleportGroup = makeGroup("Teleport Settings", ["teleport"]);
+  ttmAdd(teleportGroup, behaviourTogglesEdit.teleport.label);
   ttmAdd(teleportGroup, this.createField("Destination X", teleportX));
   ttmAdd(teleportGroup, this.createField("Destination Y", teleportY));
   ttmAdd(teleportGroup, this.createField("Offset X", teleportOffsetX));
@@ -3598,7 +4379,48 @@ createTileEditorBox() {
   ));
   ttmAdd(teleportGroup, teleportAvoidTiles.label);
 
+  const advancedAutomationGroup = makeGroup(
+    "Advanced Tile Automation",
+    [
+      "speech",
+      "switch",
+      "light",
+      "globalLight",
+      "trap",
+      "teleport",
+      "moveTokens",
+      "spawnTokens",
+      "reset"
+    ]
+  );
+  ttmAdd(
+    advancedAutomationGroup,
+    this.createHint(
+      "These settings are shared with the Node Editor and "
+      + "Multi-Use Tiles tabs."
+    )
+  );
+  ttmAdd(
+    advancedAutomationGroup,
+    this.createField("Node chain mode", nodeGraphModeEdit)
+  );
+  ttmAdd(
+    advancedAutomationGroup,
+    this.createField(
+      "Node targets (Tile ID | delay)",
+      nodeGraphTargetsEdit
+    )
+  );
+  ttmAdd(
+    advancedAutomationGroup,
+    this.createHint(
+      "Use the dedicated tabs for a visual builder. JSON editing here "
+      + "allows every saved action to remain accessible in one editor."
+    )
+  );
+
   const resetGroup = makeGroup("Reset Settings", ["reset"]);
+  ttmAdd(resetGroup, behaviourTogglesEdit.reset.label);
   ttmAdd(
     resetGroup,
     this.createHint(
@@ -3606,19 +4428,27 @@ createTileEditorBox() {
     )
   );
 
-  for (const group of [
-    commonGroup,
-    speechGroup,
-    switchGroup,
-    linkedGroup,
-    lightGroup,
-    globalLightGroup,
-    trapGroup,
-    teleportGroup,
-    moveTokensGroup,
-    resetGroup
-  ]) {
-    ttmAdd(fields, group);
+  const editorGroupDefinitions = [
+    [commonGroup, "Common Settings", true],
+    [effectsGroupEdit, "Sound & Animation", false],
+    [speechGroup, "Speech", true],
+    [switchGroup, "Switch", false],
+    [linkedGroup, "Linked Tile", false],
+    [lightGroup, "Ambient Light", false],
+    [globalLightGroup, "Global Lighting", false],
+    [trapGroup, "Trap", false],
+    [teleportGroup, "Teleport", false],
+    [moveTokensGroup, "Movement", false],
+    [spawnTokensGroup, "Spawning", false],
+    [advancedAutomationGroup, "Advanced Automation", false],
+    [resetGroup, "Reset", false]
+  ];
+
+  for (const [group, title, open] of editorGroupDefinitions) {
+    ttmAdd(
+      fields,
+      this.makeCollapsibleSection(group, title, open)
+    );
   }
 
   const buttons = ttmMake("div", null, "ttm-button-row");
@@ -3689,7 +4519,7 @@ createTileEditorBox() {
       ".ttm-editor-template-group"
     )) {
       const templates = String(group.dataset.templates ?? "").split(",");
-      group.hidden = !templates.includes(selected);
+      group.hidden = false;
     }
 
     const clickField = fields.querySelector(
@@ -3718,6 +4548,22 @@ createTileEditorBox() {
     const utility = tileDoc.getFlag(TTM_ID, "utility") ?? {};
     const speech = tileDoc.getFlag(TTM_ID, "speech") ?? {};
     const selectedTemplate = utility.template ?? "speech";
+    const savedMultiUse =
+      tileDoc.getFlag(TTM_ID, "multiUse") ?? {};
+    const savedAdditionalTemplates = new Set(
+      Array.isArray(savedMultiUse.actions)
+        ? savedMultiUse.actions.map(action => action.template)
+        : []
+    );
+
+    for (const [key, toggle] of Object.entries(
+      behaviourTogglesEdit
+    )) {
+      toggle.input.checked =
+        key === selectedTemplate
+        || savedAdditionalTemplates.has(key);
+      toggle.input.disabled = key === selectedTemplate;
+    }
 
     name.value = tileDoc.name ?? speech.name ?? "";
     template.value = selectedTemplate;
@@ -3749,6 +4595,7 @@ createTileEditorBox() {
     lightBright.value = Number(utility.lightBright ?? 10);
     lightColor.value = utility.lightColor ?? "#ffffff";
     lightAlpha.value = Number(utility.lightAlpha ?? 0.5);
+    lightAnimation.value = utility.lightAnimation ?? "";
     globalLightAction.value = utility.globalLightAction ?? "toggle";
     globalDarkness.value = Number(utility.globalDarkness ?? 0.75);
     globalLightColorOverride.input.checked =
@@ -3787,6 +4634,15 @@ createTileEditorBox() {
     moveAutoRotateEdit.input.checked =
       utility.moveAutoRotate === true;
 
+    spawnActorEdit.value = utility.spawnActorId ?? "";
+    spawnQuantityEdit.value = Number(utility.spawnQuantity ?? 1);
+    spawnXEdit.value = utility.spawnX ?? "";
+    spawnYEdit.value = utility.spawnY ?? "";
+    spawnFormationEdit.value = utility.spawnFormation ?? "grid";
+    spawnSpacingEdit.value = Number(utility.spawnSpacing ?? canvas.grid?.size ?? 100);
+    spawnHiddenEdit.input.checked = utility.spawnHidden === true;
+    spawnRemoveOnResetEdit.input.checked = utility.spawnRemoveOnReset !== false;
+
     teleportX.value = utility.teleportX ?? "";
     teleportY.value = utility.teleportY ?? "";
     teleportOffsetX.value = Number(utility.teleportOffsetX ?? 0);
@@ -3803,6 +4659,37 @@ createTileEditorBox() {
     );
     teleportAvoidTiles.input.checked =
       utility.teleportAvoidTiles !== false;
+    teleportCreateReturn.input.checked =
+      utility.teleportCreateReturn === true;
+    hotspotSize.value = Number(utility.hotspotSize ?? 64);
+    hotspotOffsetX.value = Number(utility.hotspotOffsetX ?? 0);
+    hotspotOffsetY.value = Number(utility.hotspotOffsetY ?? 0);
+
+    const nodeGraph =
+      tileDoc.getFlag(TTM_ID, "nodeGraph") ?? {};
+    nodeGraphModeEdit.value =
+      nodeGraph.mode ?? "sequence";
+    nodeGraphTargetsEdit.value = (
+      Array.isArray(nodeGraph.targets)
+        ? nodeGraph.targets
+        : []
+    )
+      .map(target =>
+        `${target.tileId ?? ""} | ${Number(target.delay ?? 0)}`
+      )
+      .join("\n");
+
+    const multiUse =
+      tileDoc.getFlag(TTM_ID, "multiUse") ?? {};
+    multiUseModeEdit.value =
+      multiUse.mode ?? "sequence";
+    multiUseActionsEdit.value = JSON.stringify(
+      Array.isArray(multiUse.actions)
+        ? multiUse.actions
+        : [],
+      null,
+      2
+    );
 
     if (speech.conversationSequenceEnabled === true) {
       speechMode.value = "conversation-sequence";
@@ -3875,6 +4762,24 @@ createTileEditorBox() {
       );
     }
 
+    effectsEnabledEdit.input.checked =
+      utility.effectsEnabled === true
+      || utility.soundEnabled === true
+      || utility.animationEnabled === true;
+    soundEnabledEdit.input.checked =
+      utility.soundEnabled === true;
+    soundFileEdit.value = utility.soundFile ?? "";
+    soundVolumeEdit.value = Number(
+      utility.soundVolume ?? 0.8
+    );
+    animationEnabledEdit.input.checked =
+      utility.animationEnabled === true;
+    animationTypeEdit.value =
+      utility.animationType ?? "none";
+    animationDurationEdit.value = Number(
+      utility.animationDuration ?? 0.7
+    );
+
     cooldownEnabled.input.checked =
       utility.activationCooldownEnabled === true;
     cooldownSeconds.value = Number(
@@ -3883,7 +4788,7 @@ createTileEditorBox() {
 
     updateCooldownState();
     updateMoveNpcEditorVisibility();
-    updateTemplateGroups();
+    synchronisePrimaryBehaviourEdit();
 
     status.textContent =
       `Editing ${tileDoc.name ?? tileDoc.id} (${tileDoc.id})`;
@@ -3891,7 +4796,70 @@ createTileEditorBox() {
 
   selector.addEventListener("change", loadTile);
   reload.addEventListener("click", loadTile);
-  template.addEventListener("change", updateTemplateGroups);
+  const synchronisePrimaryBehaviourEdit = () => {
+    for (const [key, toggle] of Object.entries(
+      behaviourTogglesEdit
+    )) {
+      if (key === template.value) {
+        toggle.input.checked = true;
+        toggle.input.disabled = true;
+      } else {
+        toggle.input.disabled = false;
+      }
+
+      toggle.input.dispatchEvent(
+        new Event("change")
+      );
+    }
+
+    effectsEnabledEdit.input.dispatchEvent(
+      new Event("change")
+    );
+    updateTemplateGroups();
+  };
+
+  this.bindOptionalSection(
+    effectsGroupEdit,
+    effectsEnabledEdit.input
+  );
+  this.bindOptionalSection(
+    speechGroup,
+    behaviourTogglesEdit.speech.input
+  );
+  this.bindOptionalSection(
+    switchGroup,
+    behaviourTogglesEdit.switch.input
+  );
+  this.bindOptionalSection(
+    lightGroup,
+    behaviourTogglesEdit.light.input
+  );
+  this.bindOptionalSection(
+    globalLightGroup,
+    behaviourTogglesEdit.globalLight.input
+  );
+  this.bindOptionalSection(
+    trapGroup,
+    behaviourTogglesEdit.trap.input
+  );
+  this.bindOptionalSection(
+    teleportGroup,
+    behaviourTogglesEdit.teleport.input
+  );
+  this.bindOptionalSection(
+    moveTokensGroup,
+    behaviourTogglesEdit.moveTokens.input
+  );
+  this.bindOptionalSection(
+    spawnTokensGroup,
+    behaviourTogglesEdit.spawnTokens.input
+  );
+  this.bindOptionalSection(
+    resetGroup,
+    behaviourTogglesEdit.reset.input
+  );
+
+  template.addEventListener("change", synchronisePrimaryBehaviourEdit);
   trigger.addEventListener("change", updateTemplateGroups);
   moveTargetMode.addEventListener(
     "change",
@@ -3983,6 +4951,45 @@ createTileEditorBox() {
     const chosenInactiveImage = inactiveImage.value.trim();
     const chosenLinkedId = linkedTileId.value.trim();
 
+    const nodeTargets = String(nodeGraphTargetsEdit.value ?? "")
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => {
+        const [tileIdPart, delayPart = "0"] = line.split("|");
+
+        return {
+          tileId: String(tileIdPart ?? "").trim(),
+          delay: Math.max(
+            0,
+            Number(String(delayPart).trim() || 0)
+          )
+        };
+      })
+      .filter(target =>
+        target.tileId
+        && target.tileId !== tileDoc.id
+      );
+
+    let multiUseActions = [];
+
+    try {
+      const parsed = JSON.parse(
+        multiUseActionsEdit.value || "[]"
+      );
+
+      if (!Array.isArray(parsed)) {
+        throw new Error("Multi-use actions must be a JSON array.");
+      }
+
+      multiUseActions = parsed;
+    } catch (error) {
+      ui.notifications.warn(
+        `Multi-use actions JSON is invalid: ${error.message}`
+      );
+      return;
+    }
+
     const utilityPatch = {
       template: selectedTemplate,
       trigger: trigger.value,
@@ -3998,6 +5005,23 @@ createTileEditorBox() {
       activationActorTypes: Array.from(
         activationAudienceEdit.selectedOptions
       ).map(option => option.value),
+      effectsEnabled: effectsEnabledEdit.input.checked,
+      soundEnabled:
+        effectsEnabledEdit.input.checked
+        && soundEnabledEdit.input.checked,
+      soundFile: soundFileEdit.value.trim(),
+      soundVolume: Math.max(
+        0,
+        Math.min(1, Number(soundVolumeEdit.value || 0.8))
+      ),
+      animationEnabled:
+        effectsEnabledEdit.input.checked
+        && animationEnabledEdit.input.checked,
+      animationType: animationTypeEdit.value,
+      animationDuration: Math.max(
+        0.15,
+        Number(animationDurationEdit.value || 0.7)
+      ),
       activationCooldownEnabled: cooldownEnabled.input.checked,
       activationCooldownSeconds: Math.max(
         0.2,
@@ -4017,7 +5041,8 @@ createTileEditorBox() {
         lightDim: Number(lightDim.value || 20),
         lightBright: Number(lightBright.value || 10),
         lightColor: lightColor.value.trim() || "#ffffff",
-        lightAlpha: Number(lightAlpha.value || 0.5)
+        lightAlpha: Number(lightAlpha.value || 0.5),
+        lightAnimation: lightAnimation.value
       });
     }
 
@@ -4072,6 +5097,32 @@ createTileEditorBox() {
       });
     }
 
+    if (selectedTemplate === "spawnTokens") {
+      if (!spawnActorEdit.value) {
+        ui.notifications.warn("Choose an Actor to spawn.");
+        return;
+      }
+
+      if (
+        !Number.isFinite(Number(spawnXEdit.value))
+        || !Number.isFinite(Number(spawnYEdit.value))
+      ) {
+        ui.notifications.warn("Choose a valid spawn location.");
+        return;
+      }
+
+      Object.assign(utilityPatch, {
+        spawnActorId: spawnActorEdit.value,
+        spawnQuantity: Math.max(1, Math.min(50, Number(spawnQuantityEdit.value || 1))),
+        spawnX: spawnXEdit.value,
+        spawnY: spawnYEdit.value,
+        spawnFormation: spawnFormationEdit.value,
+        spawnSpacing: Math.max(0, Number(spawnSpacingEdit.value || 0)),
+        spawnHidden: spawnHiddenEdit.input.checked,
+        spawnRemoveOnReset: spawnRemoveOnResetEdit.input.checked
+      });
+    }
+
     if (selectedTemplate === "teleport") {
       Object.assign(utilityPatch, {
         teleportX: teleportX.value,
@@ -4086,7 +5137,15 @@ createTileEditorBox() {
         teleportCooldownSeconds: Number(
           teleportCooldownSeconds.value || 0
         ),
-        teleportAvoidTiles: teleportAvoidTiles.input.checked
+        teleportAvoidTiles: teleportAvoidTiles.input.checked,
+        teleportCreateReturn:
+          teleportCreateReturn.input.checked,
+        hotspotSize: Math.max(
+          1,
+          Number(hotspotSize.value || 64)
+        ),
+        hotspotOffsetX: Number(hotspotOffsetX.value || 0),
+        hotspotOffsetY: Number(hotspotOffsetY.value || 0)
       });
     }
 
@@ -4101,6 +5160,23 @@ createTileEditorBox() {
       activationActorTypes: Array.from(
         activationAudienceEdit.selectedOptions
       ).map(option => option.value),
+      effectsEnabled: effectsEnabledEdit.input.checked,
+      soundEnabled:
+        effectsEnabledEdit.input.checked
+        && soundEnabledEdit.input.checked,
+      soundFile: soundFileEdit.value.trim(),
+      soundVolume: Math.max(
+        0,
+        Math.min(1, Number(soundVolumeEdit.value || 0.8))
+      ),
+      animationEnabled:
+        effectsEnabledEdit.input.checked
+        && animationEnabledEdit.input.checked,
+      animationType: animationTypeEdit.value,
+      animationDuration: Math.max(
+        0.15,
+        Number(animationDurationEdit.value || 0.7)
+      ),
       activationCooldownEnabled: cooldownEnabled.input.checked,
       activationCooldownSeconds: Math.max(
         0.2,
@@ -4224,6 +5300,115 @@ createTileEditorBox() {
     }
 
     await tileDoc.update(updates);
+
+    if (nodeTargets.length) {
+      await tileDoc.setFlag(TTM_ID, "nodeGraph", {
+        enabled: true,
+        mode: nodeGraphModeEdit.value,
+        targets: nodeTargets
+      });
+    } else {
+      await tileDoc.unsetFlag(TTM_ID, "nodeGraph");
+    }
+
+    const automaticActions = [];
+    const addAutomaticAction = (key, data) => {
+      if (
+        key !== selectedTemplate
+        && behaviourTogglesEdit[key]?.input.checked
+      ) {
+        automaticActions.push({ template: key, ...data });
+      }
+    };
+
+    addAutomaticAction("speech", {
+      mode: speechMode.value === "custom" ? "custom" : "table",
+      text: speechText.value,
+      tableId: speechTable.value,
+      tokenId: speechSubjectToken.value,
+      npcName: speechNpcName.value.trim()
+    });
+    addAutomaticAction("switch", {
+      doorWallId: doorWallId.value.trim(),
+      doorAction: doorAction.value
+    });
+    addAutomaticAction("light", {
+      lightDim: Number(lightDim.value || 20),
+      lightBright: Number(lightBright.value || 10),
+      lightColor: lightColor.value.trim() || "#ffffff",
+      lightAlpha: Number(lightAlpha.value || 0.5),
+      lightAnimation: lightAnimation.value
+    });
+    addAutomaticAction("globalLight", {
+      globalLightAction: globalLightAction.value,
+      globalDarkness: Math.max(
+        0,
+        Math.min(1, Number(globalDarkness.value || 0.75))
+      )
+    });
+    addAutomaticAction("trap", {
+      saveAbility: saveAbility.value,
+      saveDC: Number(saveDC.value || 10),
+      trapTarget: trapTarget.value
+    });
+    addAutomaticAction("teleport", {
+      teleportX: teleportX.value,
+      teleportY: teleportY.value,
+      teleportOffsetX: Number(teleportOffsetX.value || 0),
+      teleportOffsetY: Number(teleportOffsetY.value || 0),
+      teleportAvoidTiles: teleportAvoidTiles.input.checked,
+      teleportUseCooldown: teleportUseCooldown.input.checked,
+      teleportCooldownSeconds: Number(
+        teleportCooldownSeconds.value || 0
+      )
+    });
+    addAutomaticAction("moveTokens", {
+      moveDestinationX: moveDestinationX.value,
+      moveDestinationY: moveDestinationY.value,
+      moveRoute: (() => {
+        try {
+          const parsed = JSON.parse(moveRouteEdit.value || "[]");
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      })(),
+      moveTargetMode: moveTargetMode.value,
+      moveTokenIds: Array.from(
+        moveNpcTokensEdit.selectedOptions
+      ).map(option => option.value),
+      moveOffsetX: Number(moveOffsetX.value || 0),
+      moveOffsetY: Number(moveOffsetY.value || 0),
+      moveSpacing: Math.max(0, Number(moveSpacing.value || 0)),
+      moveAutoRotate: moveAutoRotateEdit.input.checked
+    });
+    addAutomaticAction("spawnTokens", {
+      spawnActorId: spawnActorEdit.value,
+      spawnQuantity: Math.max(
+        1,
+        Math.min(50, Number(spawnQuantityEdit.value || 1))
+      ),
+      spawnX: spawnXEdit.value,
+      spawnY: spawnYEdit.value,
+      spawnFormation: spawnFormationEdit.value,
+      spawnSpacing: Math.max(
+        0,
+        Number(spawnSpacingEdit.value || 0)
+      ),
+      spawnHidden: spawnHiddenEdit.input.checked,
+      spawnRemoveOnReset: spawnRemoveOnResetEdit.input.checked
+    });
+    addAutomaticAction("reset", {});
+
+    if (automaticActions.length) {
+      await tileDoc.setFlag(TTM_ID, "multiUse", {
+        enabled: true,
+        mode: "sequence",
+        actions: automaticActions
+      });
+    } else {
+      await tileDoc.unsetFlag(TTM_ID, "multiUse");
+    }
 
     ui.notifications.info(
       `TalkToMe updated ${tileDoc.name ?? tileDoc.id}.`
@@ -4510,6 +5695,541 @@ createTileEditorBox() {
     return panel;
   }
 
+  // Multi-template tile builder
+  createMultiUseTilesPanel() {
+    const panel = ttmMake("section", null, "ttm-panel");
+    panel.dataset.panel = "multi";
+    panel.hidden = this.activeTab !== "multi";
+
+    ttmAdd(
+      panel,
+      this.createHint(
+        "Add complete Trigger Tile templates to one physical tile. "
+        + "Its normal template runs first, followed by these additional templates."
+      )
+    );
+
+    const sourceSelect = ttmMake("select");
+    const blank = ttmMake(
+      "option",
+      "— Choose the multi-use tile —"
+    );
+    blank.value = "";
+    ttmAdd(sourceSelect, blank);
+
+    for (const tile of this.getTalkToMeTiles()) {
+      const option = ttmMake(
+        "option",
+        `${tile.name ?? "Tile"} [${tile.id}]`
+      );
+      option.value = tile.id;
+      ttmAdd(sourceSelect, option);
+    }
+
+    const executionMode = ttmMake("select");
+    for (const [value, label] of [
+      ["sequence", "Run templates in sequence"],
+      ["parallel", "Run templates together"]
+    ]) {
+      const option = ttmMake("option", label);
+      option.value = value;
+      ttmAdd(executionMode, option);
+    }
+
+    const actions = ttmMake(
+      "div",
+      null,
+      "ttm-multi-action-list"
+    );
+
+    const makeNumber = (value = 0, step = "1", min = null) => {
+      const input = ttmMake("input");
+      input.type = "number";
+      input.value = value;
+      input.step = step;
+      if (min !== null) input.min = min;
+      return input;
+    };
+
+    const makeSelect = options => {
+      const select = ttmMake("select");
+
+      for (const [value, label] of options) {
+        const option = ttmMake("option", label);
+        option.value = value;
+        ttmAdd(select, option);
+      }
+
+      return select;
+    };
+
+    const addActionRow = (saved = {}) => {
+      const card = ttmMake(
+        "section",
+        null,
+        "ttm-multi-action-card"
+      );
+      const header = ttmMake(
+        "div",
+        null,
+        "ttm-multi-action-header"
+      );
+      const type = makeSelect([
+        ["speech", "Speech Bubble"],
+        ["switch", "Switch Activation"],
+        ["light", "Environment: Ambient Light"],
+        ["globalLight", "Environment: Global Lighting"],
+        ["trap", "Trap Activation"],
+        ["teleport", "Teleport Activation"],
+        ["moveTokens", "Move Tokens"],
+        ["spawnTokens", "Spawn Tokens"],
+        ["reset", "Reset Tile"]
+      ]);
+      const remove = ttmMake("button", "Remove");
+
+      remove.type = "button";
+      remove.addEventListener("click", () => card.remove());
+
+      ttmAdd(header, type);
+      ttmAdd(header, remove);
+      ttmAdd(card, header);
+
+      const body = ttmMake(
+        "div",
+        null,
+        "ttm-multi-action-body"
+      );
+
+      const rebuild = () => {
+        body.replaceChildren();
+        const value = type.value;
+
+        if (value === "speech") {
+          const mode = makeSelect([
+            ["custom", "Custom text"],
+            ["table", "RollTable"]
+          ]);
+          mode.value = saved.mode ?? "custom";
+
+          const text = ttmMake("textarea");
+          text.rows = 3;
+          text.placeholder = "Speech bubble text";
+          text.value = saved.text ?? "";
+
+          const table = this.createTableSelect(
+            `ttm-multi-table-${foundry.utils.randomID()}`
+          );
+          table.value = saved.tableId ?? "";
+
+          const token = this.createTokenSelect(
+            `ttm-multi-token-${foundry.utils.randomID()}`
+          );
+          token.value = saved.tokenId ?? "";
+
+          const npcName = ttmMake("input");
+          npcName.type = "text";
+          npcName.placeholder = "Optional NPC name";
+          npcName.value = saved.npcName ?? "";
+
+          ttmAdd(body, this.createField("Speech source", mode));
+          ttmAdd(body, this.createField("Custom text", text));
+          ttmAdd(body, this.createField("RollTable", table));
+          ttmAdd(body, this.createField("Speaker", token));
+          ttmAdd(body, this.createField("NPC name", npcName));
+
+          card.readAction = () => ({
+            template: "speech",
+            mode: mode.value,
+            text: text.value,
+            tableId: table.value,
+            tokenId: token.value,
+            npcName: npcName.value.trim()
+          });
+        } else if (value === "switch") {
+          const wall = ttmMake("input");
+          wall.type = "text";
+          wall.placeholder = "Wall ID";
+          wall.value = saved.doorWallId ?? "";
+
+          const action = makeSelect([
+            ["toggle", "Toggle door"],
+            ["open", "Open door"],
+            ["close", "Close door"],
+            ["lock", "Lock door"]
+          ]);
+          action.value = saved.doorAction ?? "toggle";
+
+          ttmAdd(
+            body,
+            this.createWallPickerField("Door Wall ID", wall)
+          );
+          ttmAdd(body, this.createField("Door action", action));
+
+          card.readAction = () => ({
+            template: "switch",
+            doorWallId: wall.value.trim(),
+            doorAction: action.value
+          });
+        } else if (value === "light") {
+          const dim = makeNumber(saved.lightDim ?? 20);
+          const bright = makeNumber(saved.lightBright ?? 10);
+          const color = ttmMake("input");
+          color.type = "color";
+          color.value = saved.lightColor ?? "#ffffff";
+          const alpha = makeNumber(
+            saved.lightAlpha ?? 0.5,
+            "0.05",
+            0
+          );
+          alpha.max = 1;
+
+          ttmAdd(body, this.createField("Dim radius", dim));
+          ttmAdd(body, this.createField("Bright radius", bright));
+          ttmAdd(body, this.createField("Colour", color));
+          ttmAdd(body, this.createField("Alpha", alpha));
+
+          card.readAction = () => ({
+            template: "light",
+            lightDim: Number(dim.value || 20),
+            lightBright: Number(bright.value || 10),
+            lightColor: color.value,
+            lightAlpha: Number(alpha.value || 0.5)
+          });
+        } else if (value === "globalLight") {
+          const action = makeSelect([
+            ["on", "Fade to Day"],
+            ["off", "Fade to Night"],
+            ["toggle", "Toggle Day / Night"],
+            ["set-darkness", "Set Darkness Level"],
+            ["restore", "Restore Original Lighting"]
+          ]);
+          action.value = saved.globalLightAction ?? "toggle";
+
+          const darkness = makeNumber(
+            saved.globalDarkness ?? 0.75,
+            "0.05",
+            0
+          );
+          darkness.max = 1;
+
+          ttmAdd(body, this.createField("Action", action));
+          ttmAdd(
+            body,
+            this.createField("Darkness level", darkness)
+          );
+
+          card.readAction = () => ({
+            template: "globalLight",
+            globalLightAction: action.value,
+            globalDarkness: Math.max(
+              0,
+              Math.min(1, Number(darkness.value || 0.75))
+            )
+          });
+        } else if (value === "trap") {
+          const ability = makeSelect(
+            ["str", "dex", "con", "int", "wis", "cha"]
+              .map(item => [item, item.toUpperCase()])
+          );
+          ability.value = saved.saveAbility ?? "dex";
+          const dc = makeNumber(saved.saveDC ?? 10, "1", 1);
+          const target = makeSelect([
+            ["triggering-token", "Triggering Token"],
+            ["tokens-within-tile", "Tokens Within Tile"],
+            ["use-player-tokens", "Player Tokens"]
+          ]);
+          target.value = saved.trapTarget ?? "triggering-token";
+
+          ttmAdd(body, this.createField("Save ability", ability));
+          ttmAdd(body, this.createField("Save DC", dc));
+          ttmAdd(body, this.createField("Targets", target));
+
+          card.readAction = () => ({
+            template: "trap",
+            saveAbility: ability.value,
+            saveDC: Number(dc.value || 10),
+            trapTarget: target.value
+          });
+        } else if (value === "teleport") {
+          const x = makeNumber(saved.teleportX ?? "");
+          const y = makeNumber(saved.teleportY ?? "");
+          const offsetX = makeNumber(saved.teleportOffsetX ?? 0);
+          const offsetY = makeNumber(saved.teleportOffsetY ?? 0);
+
+          ttmAdd(
+            body,
+            this.createCanvasPointPickerField(
+              "Destination",
+              x,
+              y
+            )
+          );
+          ttmAdd(body, this.createField("Offset X", offsetX));
+          ttmAdd(body, this.createField("Offset Y", offsetY));
+
+          card.readAction = () => ({
+            template: "teleport",
+            teleportX: x.value,
+            teleportY: y.value,
+            teleportOffsetX: Number(offsetX.value || 0),
+            teleportOffsetY: Number(offsetY.value || 0),
+            teleportAvoidTiles: true,
+            teleportUseCooldown: false
+          });
+        } else if (value === "moveTokens") {
+          const target = makeSelect([
+            ["triggering-token", "Triggering Token"],
+            ["tokens-within-tile", "Tokens Within Tile"],
+            ["selected-tokens", "Selected Tokens"],
+            ["player-tokens", "Player-Owned Tokens"]
+          ]);
+          target.value = saved.moveTargetMode ?? "triggering-token";
+
+          const x = makeNumber(saved.moveDestinationX ?? "");
+          const y = makeNumber(saved.moveDestinationY ?? "");
+          const spacing = makeNumber(
+            saved.moveSpacing ?? canvas.grid?.size ?? 100,
+            "1",
+            0
+          );
+
+          ttmAdd(body, this.createField("Tokens to move", target));
+          ttmAdd(
+            body,
+            this.createCanvasPointPickerField(
+              "Destination",
+              x,
+              y
+            )
+          );
+          ttmAdd(body, this.createField("Formation spacing", spacing));
+
+          card.readAction = () => ({
+            template: "moveTokens",
+            moveTargetMode: target.value,
+            moveDestinationX: x.value,
+            moveDestinationY: y.value,
+            moveSpacing: Math.max(
+              0,
+              Number(spacing.value || 0)
+            ),
+            moveRoute: []
+          });
+        } else if (value === "spawnTokens") {
+          const actor = this.createActorSelect(
+            `ttm-multi-actor-${foundry.utils.randomID()}`
+          );
+          actor.value = saved.spawnActorId ?? "";
+
+          const quantity = makeNumber(
+            saved.spawnQuantity ?? 1,
+            "1",
+            1
+          );
+          quantity.max = 50;
+
+          const x = makeNumber(saved.spawnX ?? "");
+          const y = makeNumber(saved.spawnY ?? "");
+          const formation = makeSelect([
+            ["single", "Single point"],
+            ["grid", "Grid"],
+            ["circle", "Circle"],
+            ["random", "Random area"]
+          ]);
+          formation.value = saved.spawnFormation ?? "grid";
+
+          const spacing = makeNumber(
+            saved.spawnSpacing ?? canvas.grid?.size ?? 100,
+            "1",
+            0
+          );
+
+          ttmAdd(body, this.createField("Actor", actor));
+          ttmAdd(body, this.createField("Quantity", quantity));
+          ttmAdd(
+            body,
+            this.createCanvasPointPickerField(
+              "Spawn location",
+              x,
+              y
+            )
+          );
+          ttmAdd(body, this.createField("Formation", formation));
+          ttmAdd(body, this.createField("Spacing", spacing));
+
+          card.readAction = () => ({
+            template: "spawnTokens",
+            spawnActorId: actor.value,
+            spawnQuantity: Math.max(
+              1,
+              Math.min(50, Number(quantity.value || 1))
+            ),
+            spawnX: x.value,
+            spawnY: y.value,
+            spawnFormation: formation.value,
+            spawnSpacing: Math.max(
+              0,
+              Number(spacing.value || 0)
+            ),
+            spawnHidden: false,
+            spawnRemoveOnReset: true
+          });
+        } else {
+          ttmAdd(
+            body,
+            this.createHint(
+              "Reset all TalkToMe tiles and remove reset-managed spawned tokens."
+            )
+          );
+
+          card.readAction = () => ({
+            template: "reset"
+          });
+        }
+      };
+
+      type.value = saved.template ?? "speech";
+      type.addEventListener("change", () => {
+        saved = {};
+        rebuild();
+      });
+
+      ttmAdd(card, body);
+      actions.appendChild(card);
+      rebuild();
+    };
+
+    const load = () => {
+      actions.replaceChildren();
+
+      const source = canvas.scene?.tiles?.get(
+        sourceSelect.value
+      );
+      const config =
+        source?.getFlag(TTM_ID, "multiUse") ?? {};
+
+      executionMode.value = config.mode ?? "sequence";
+
+      const savedActions = Array.isArray(config.actions)
+        ? config.actions
+        : [];
+
+      if (!savedActions.length) addActionRow();
+      else savedActions.forEach(addActionRow);
+    };
+
+    sourceSelect.addEventListener("change", load);
+
+    const add = ttmMake(
+      "button",
+      "＋ Add Trigger Template",
+      "ttm-multi-action-button"
+    );
+    add.type = "button";
+    add.addEventListener("click", () => addActionRow());
+
+    const save = ttmMake(
+      "button",
+      "Save Multi-Use Tile",
+      "ttm-multi-action-button"
+    );
+    save.type = "button";
+    save.addEventListener("click", async () => {
+      const source = canvas.scene?.tiles?.get(
+        sourceSelect.value
+      );
+
+      if (!source) {
+        ui.notifications.warn("Choose a source tile.");
+        return;
+      }
+
+      const savedActions = Array.from(
+        actions.querySelectorAll(".ttm-multi-action-card")
+      )
+        .map(card => card.readAction?.())
+        .filter(Boolean);
+
+      await source.setFlag(TTM_ID, "multiUse", {
+        enabled: true,
+        mode: executionMode.value,
+        actions: savedActions
+      });
+
+      ui.notifications.info(
+        `Saved ${savedActions.length} additional template`
+        + `${savedActions.length === 1 ? "" : "s"}.`
+      );
+    });
+
+    const test = ttmMake(
+      "button",
+      "Test Added Templates",
+      "ttm-multi-action-button"
+    );
+    test.type = "button";
+    test.addEventListener("click", async () => {
+      const source = canvas.scene?.tiles?.get(
+        sourceSelect.value
+      );
+
+      if (!source) {
+        ui.notifications.warn("Choose a source tile.");
+        return;
+      }
+
+      await game.talkToMe?.runMultiUseActions?.(
+        source,
+        canvas.tokens?.controlled?.[0] ?? null
+      );
+    });
+
+    const disable = ttmMake(
+      "button",
+      "Disable Multi-Use Templates",
+      "ttm-multi-action-button"
+    );
+    disable.type = "button";
+    disable.addEventListener("click", async () => {
+      const source = canvas.scene?.tiles?.get(
+        sourceSelect.value
+      );
+
+      if (!source) {
+        ui.notifications.warn("Choose a source tile.");
+        return;
+      }
+
+      await source.unsetFlag(TTM_ID, "multiUse");
+      load();
+      ui.notifications.info("Multi-use templates disabled.");
+    });
+
+    ttmAdd(
+      panel,
+      this.createField("Multi-use tile", sourceSelect)
+    );
+    ttmAdd(
+      panel,
+      this.createField("Execution mode", executionMode)
+    );
+    ttmAdd(panel, actions);
+    ttmAdd(panel, add);
+
+    const buttons = ttmMake(
+      "div",
+      null,
+      "ttm-multi-action-buttons"
+    );
+    ttmAdd(buttons, save);
+    ttmAdd(buttons, test);
+    ttmAdd(buttons, disable);
+    ttmAdd(panel, buttons);
+
+    addActionRow();
+    return panel;
+  }
+
   // Macro generator
   createMacrosPanel() {
     const panel = ttmMake("section", null, "ttm-panel");
@@ -4585,7 +6305,7 @@ createTileEditorBox() {
     ttmAdd(buttons, copy);
 
     ttmAdd(panel, this.createHint("Generate snippets for Foundry hotbar macros or Monk's Active Tile Triggers Execute Script actions."));
-    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "reset"]));
+    ttmAdd(panel, this.createTemplateField("RollTable", tableSelect, ["speech", "switch", "light", "globalLight", "trap", "teleport", "moveTokens", "spawnTokens", "reset"]));
     ttmAdd(panel, this.createField("Token source", source));
     ttmAdd(panel, this.createField("Custom NPC name", npc));
     ttmAdd(panel, this.createField("Token name or ID", tokenRef));

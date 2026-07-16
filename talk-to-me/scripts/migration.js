@@ -650,6 +650,151 @@ function migrateToVersion11(tileDoc, data) {
   return data;
 }
 
+function migrateToVersion12(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      spawnActorId: utility.spawnActorId ?? "",
+      spawnQuantity: Math.max(1, Math.min(50, numberOr(utility.spawnQuantity, 1))),
+      spawnX: utility.spawnX ?? "",
+      spawnY: utility.spawnY ?? "",
+      spawnFormation: utility.spawnFormation ?? "grid",
+      spawnSpacing: Math.max(0, numberOr(utility.spawnSpacing, 100)),
+      spawnHidden: booleanOr(utility.spawnHidden, false),
+      spawnRemoveOnReset: booleanOr(utility.spawnRemoveOnReset, true),
+      spawnedTokenIds: Array.isArray(utility.spawnedTokenIds)
+        ? utility.spawnedTokenIds
+        : []
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      spawnActorId: data.utility.spawnActorId,
+      spawnQuantity: data.utility.spawnQuantity,
+      spawnX: data.utility.spawnX,
+      spawnY: data.utility.spawnY,
+      spawnFormation: data.utility.spawnFormation,
+      spawnSpacing: data.utility.spawnSpacing,
+      spawnHidden: data.utility.spawnHidden,
+      spawnRemoveOnReset: data.utility.spawnRemoveOnReset
+    },
+    { inplace: false }
+  );
+
+  data.version = 12;
+  return data;
+}
+
+function migrateToVersion13(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      soundEnabled: booleanOr(
+        utility.soundEnabled,
+        false
+      ),
+      soundFile: utility.soundFile ?? "",
+      soundVolume: Math.max(
+        0,
+        Math.min(1, numberOr(utility.soundVolume, 0.8))
+      ),
+      animationEnabled: booleanOr(
+        utility.animationEnabled,
+        false
+      ),
+      animationType: utility.animationType ?? "none",
+      animationDuration: Math.max(
+        0.15,
+        numberOr(utility.animationDuration, 0.7)
+      )
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      soundEnabled: booleanOr(
+        data.utility.originalState?.soundEnabled
+          ?? data.utility.soundEnabled,
+        false
+      ),
+      soundFile:
+        data.utility.originalState?.soundFile
+        ?? data.utility.soundFile,
+      soundVolume: Math.max(
+        0,
+        Math.min(
+          1,
+          numberOr(
+            data.utility.originalState?.soundVolume
+              ?? data.utility.soundVolume,
+            0.8
+          )
+        )
+      ),
+      animationEnabled: booleanOr(
+        data.utility.originalState?.animationEnabled
+          ?? data.utility.animationEnabled,
+        false
+      ),
+      animationType:
+        data.utility.originalState?.animationType
+        ?? data.utility.animationType,
+      animationDuration: Math.max(
+        0.15,
+        numberOr(
+          data.utility.originalState?.animationDuration
+            ?? data.utility.animationDuration,
+          0.7
+        )
+      )
+    },
+    { inplace: false }
+  );
+
+  data.version = 13;
+  return data;
+}
+
+function migrateToVersion14(tileDoc, data) {
+  const utility = clone(data.utility);
+  const effectsEnabled =
+    utility.effectsEnabled === true
+    || utility.soundEnabled === true
+    || utility.animationEnabled === true;
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      effectsEnabled
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      effectsEnabled:
+        data.utility.originalState?.effectsEnabled === true
+        || data.utility.originalState?.soundEnabled === true
+        || data.utility.originalState?.animationEnabled === true
+        || effectsEnabled
+    },
+    { inplace: false }
+  );
+
+  data.version = 14;
+  return data;
+}
+
 function isTalkToMeTile(tileDoc) {
   const root = tileDoc.flags?.[TTM_ID] ?? {};
   const utility = root.utility ?? {};
@@ -694,6 +839,9 @@ export function buildTileMigration(tileDoc) {
   if (data.version < 9) data = migrateToVersion9(tileDoc, data);
   if (data.version < 10) data = migrateToVersion10(tileDoc, data);
   if (data.version < 11) data = migrateToVersion11(tileDoc, data);
+  if (data.version < 12) data = migrateToVersion12(tileDoc, data);
+  if (data.version < 13) data = migrateToVersion13(tileDoc, data);
+  if (data.version < 14) data = migrateToVersion14(tileDoc, data);
 
   return {
     _id: tileDoc.id,
