@@ -1,0 +1,985 @@
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) {
+  position: fixed;
+  z-index: 100;
+  width: 460px;
+  max-height: 82vh;
+  background: #1f1f1f;
+  color: #f0f0e0;
+  border: 1px solid #000;
+  border-radius: 6px;
+  box-shadow: 0 0 18px #000;
+  overflow: hidden;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-header {
+  cursor: move;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(0, 0, 0, 0.55);
+  border-bottom: 1px solid #000;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-title {
+  margin: 0;
+  flex: 1;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-subtitle {
+  opacity: 0.75;
+  font-size: 0.8rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-header-button {
+  width: 28px;
+  height: 28px;
+  line-height: 1;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-body {
+  padding: 0.75rem;
+  overflow-y: auto;
+  max-height: calc(82vh - 38px);
+  background: rgba(20, 20, 20, 0.98);
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-status-row {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-pill {
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+  border: 1px solid currentColor;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-pill.ok {
+  color: #8ee68e;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-pill.warn {
+  color: #f0c36a;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tabs {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  padding: 0.35rem 0 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  background: inherit;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tab-row {
+  display: grid;
+  gap: 0.4rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tab-row-main {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tab {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  height: auto;
+  padding: 0.34rem 0.45rem;
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tab.active {
+  font-weight: bold;
+  box-shadow: inset 0 -2px 0 #ff6400;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-panel[hidden] {
+  display: none !important;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .form-group {
+  margin-bottom: 0.38rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) input[type="text"],
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) input[type="number"],
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) select,
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) textarea {
+  width: 100%;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) textarea {
+  resize: vertical;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: normal;
+  margin: 0.4rem 0;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-button-row,
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-card-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  margin-top: 0.38rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-primary {
+  font-weight: bold;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-token-card,
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tile-card {
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid #000;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-hint {
+  margin-top: 0;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .notes {
+  opacity: 0.8;
+  font-size: 0.85rem;
+}
+
+#talk-to-me-bubble-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ttm-world-bubble {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 22px));
+  min-width: 120px;
+  max-width: 320px;
+  padding: 8px 10px;
+  color: #f8f1df;
+  background: rgba(20, 20, 20, 0.95);
+  border: 1px solid rgba(255, 220, 140, 0.75);
+  border-radius: 12px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.65);
+  font-family: var(--font-primary, sans-serif);
+  animation: ttmBubbleIn 160ms ease-out;
+}
+
+.ttm-world-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  transform: translateX(-50%) rotate(45deg);
+  width: 14px;
+  height: 14px;
+  background: rgba(20, 20, 20, 0.95);
+  border-right: 1px solid rgba(255, 220, 140, 0.75);
+  border-bottom: 1px solid rgba(255, 220, 140, 0.75);
+}
+
+.ttm-world-bubble-name {
+  margin-bottom: 3px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #ffd98a;
+  opacity: 0.95;
+}
+
+.ttm-world-bubble-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+
+.ttm-world-bubble-fading {
+  opacity: 0;
+  transition: opacity 250ms ease-in;
+}
+
+@keyframes ttmBubbleIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% - 14px)) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, calc(-100% - 22px)) scale(1);
+  }
+}
+
+/* TalkToMe v0.4.0: speech bubbles now render in PIXI, so .ttm-world-bubble CSS is kept only for older fallback builds. */
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-image-picker-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-image-picker-row input {
+  flex: 1;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-icon-button {
+  flex: 0 0 34px;
+  width: 34px;
+  min-width: 34px;
+  text-align: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) [data-ttm-template-field][hidden],
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) [data-ttm-switch-click-group][hidden] {
+  display: none !important;
+}
+
+
+#talk-to-me-floating-launcher {
+  position: fixed;
+  left: 12px;
+  bottom: 84px;
+  z-index: 10000;
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  border: 1px solid #000;
+  background: rgba(30, 30, 30, 0.95);
+  color: #f0f0e0;
+  box-shadow: 0 0 10px #000;
+  cursor: pointer;
+}
+
+#talk-to-me-floating-launcher:hover {
+  filter: brightness(1.25);
+}
+
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) [data-ttm-template-field][hidden],
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) [data-ttm-trigger-field][hidden],
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) [data-ttm-switch-click-group][hidden] {
+  display: none !important;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-template-group {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px;
+  padding: 0.5rem;
+  margin-bottom: 0.65rem;
+  background: rgba(255,255,255,0.035);
+}
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-template-group[hidden] { display: none !important; }
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-template-group h3 { margin-top: 0; margin-bottom: 0.45rem; }
+
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-wall-picker-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-wall-picker-row input {
+  flex: 1;
+}
+
+/* Hotspot fields */
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) #ttm-hotspot-size,
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) #ttm-hotspot-offset-x,
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) #ttm-hotspot-offset-y { max-width: 120px; }
+
+
+/* Colour picker fields */
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-colour-picker-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-colour-picker-row input[type="color"] {
+  flex: 0 0 38px;
+  width: 38px;
+  height: 28px;
+  padding: 0;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-colour-picker-row input[type="text"] {
+  flex: 1;
+}
+
+
+/* Tile picker fields */
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tile-picker-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tile-picker-row input {
+  flex: 1;
+}
+
+
+/* Coordinate picker fields */
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-coordinate-picker-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: end;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-coordinate-picker-row label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-coordinate-picker-row button {
+  flex: 0 0 auto;
+}
+
+
+.ttm-editor-box {
+  border: 1px solid var(--color-border-light-2, #777);
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.ttm-editor-fields {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ttm-editor-status {
+  margin: 6px 0;
+}
+
+.ttm-editor-box .ttm-button-row {
+  margin-top: 10px;
+}
+
+
+
+#talk-to-me-tile-editor-window {
+  z-index: 10020;
+  position: fixed;
+  z-index: 1100;
+  width: 520px;
+  max-width: calc(100vw - 20px);
+  max-height: 82vh;
+  background: #1f1f1f;
+  color: #f0f0e0;
+  border: 1px solid #000;
+  border-radius: 6px;
+  box-shadow: 0 0 18px #000;
+  overflow: hidden;
+}
+
+#talk-to-me-tile-editor-window .ttm-header {
+  cursor: move;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(0, 0, 0, 0.55);
+  border-bottom: 1px solid #000;
+}
+
+#talk-to-me-tile-editor-window .ttm-title {
+  margin: 0;
+  flex: 1;
+}
+
+#talk-to-me-tile-editor-window .ttm-header-button {
+  width: 28px;
+  height: 28px;
+  line-height: 1;
+}
+
+#talk-to-me-tile-editor-window .ttm-body {
+  padding: 0.75rem;
+  overflow-y: auto;
+  max-height: calc(82vh - 38px);
+  background: rgba(20, 20, 20, 0.98);
+}
+
+#talk-to-me-tile-editor-window .ttm-editor-box {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+#talk-to-me-tile-editor-window .form-group {
+  margin-bottom: 0.55rem;
+}
+
+#talk-to-me-tile-editor-window label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+#talk-to-me-tile-editor-window input[type="text"],
+#talk-to-me-tile-editor-window input[type="number"],
+#talk-to-me-tile-editor-window select,
+#talk-to-me-tile-editor-window textarea {
+  width: 100%;
+}
+
+#talk-to-me-tile-editor-window textarea {
+  resize: vertical;
+}
+
+#talk-to-me-tile-editor-window label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: normal;
+  margin: 0.4rem 0;
+}
+
+#talk-to-me-tile-editor-window .ttm-button-row,
+#talk-to-me-tile-editor-window .ttm-card-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+#talk-to-me-tile-editor-window .ttm-hint {
+  margin-top: 0;
+}
+
+#talk-to-me-tile-editor-window .notes {
+  color: #c7c7b8;
+}
+
+#talk-to-me-tile-editor-window .ttm-image-picker-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+#talk-to-me-tile-editor-window .ttm-image-picker-row input {
+  flex: 1;
+}
+
+#talk-to-me-tile-editor-window .ttm-icon-button {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 30px;
+}
+
+#talk-to-me-tile-editor-window button,
+#talk-to-me-tile-editor-window input,
+#talk-to-me-tile-editor-window select,
+#talk-to-me-tile-editor-window textarea {
+  color: inherit;
+}
+
+
+#talk-to-me-tile-manager-window {
+  position: fixed;
+  z-index: 1090;
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  max-height: 82vh;
+  background: #1f1f1f;
+  color: #f0f0e0;
+  border: 1px solid #000;
+  border-radius: 6px;
+  box-shadow: 0 0 18px #000;
+  overflow: hidden;
+}
+
+#talk-to-me-tile-manager-window .ttm-header {
+  cursor: move;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(0, 0, 0, 0.55);
+  border-bottom: 1px solid #000;
+}
+
+#talk-to-me-tile-manager-window .ttm-title {
+  margin: 0;
+  flex: 1;
+}
+
+#talk-to-me-tile-manager-window .ttm-header-button {
+  width: 28px;
+  height: 28px;
+  line-height: 1;
+}
+
+#talk-to-me-tile-manager-window .ttm-body {
+  padding: 0.75rem;
+  overflow-y: auto;
+  max-height: calc(82vh - 38px);
+  background: rgba(20, 20, 20, 0.98);
+}
+
+#talk-to-me-tile-manager-window .ttm-button-row,
+#talk-to-me-tile-manager-window .ttm-card-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+#talk-to-me-tile-manager-window .ttm-tile-card {
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid #000;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#talk-to-me-tile-manager-window .notes {
+  color: #c7c7b8;
+}
+
+
+#talk-to-me-conversation-window {
+  position: fixed;
+  z-index: 1110;
+  width: 580px;
+  max-width: calc(100vw - 32px);
+  max-height: 84vh;
+  background: #1f1f1f;
+  color: #f0f0e0;
+  border: 1px solid #000;
+  border-radius: 6px;
+  box-shadow: 0 0 18px #000;
+  overflow: hidden;
+}
+
+#talk-to-me-conversation-window .ttm-header {
+  cursor: move;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(0, 0, 0, 0.55);
+  border-bottom: 1px solid #000;
+}
+
+#talk-to-me-conversation-window .ttm-title {
+  margin: 0;
+  flex: 1;
+}
+
+#talk-to-me-conversation-window .ttm-header-button {
+  width: 28px;
+  height: 28px;
+  line-height: 1;
+}
+
+#talk-to-me-conversation-window .ttm-body {
+  padding: 0.75rem;
+  overflow-y: auto;
+  max-height: calc(84vh - 38px);
+  background: rgba(20, 20, 20, 0.98);
+}
+
+#talk-to-me-conversation-window .form-group {
+  margin-bottom: 0.55rem;
+}
+
+#talk-to-me-conversation-window label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+#talk-to-me-conversation-window input[type="text"],
+#talk-to-me-conversation-window input[type="number"],
+#talk-to-me-conversation-window select,
+#talk-to-me-conversation-window textarea {
+  width: 100%;
+}
+
+#talk-to-me-conversation-window label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: normal;
+  margin: 0.4rem 0;
+}
+
+#talk-to-me-conversation-window .ttm-conversation-participant {
+  padding: 0.65rem;
+  margin: 0.65rem 0;
+  border: 1px solid #000;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#talk-to-me-conversation-window .ttm-conversation-participant h3 {
+  margin: 0 0 0.45rem;
+}
+
+#talk-to-me-conversation-window .ttm-primary {
+  width: 100%;
+  margin-top: 0.75rem;
+  font-weight: bold;
+}
+
+
+#talk-to-me-tile-editor-window .ttm-conversation-participant {
+  padding: 0.65rem;
+  margin: 0.65rem 0;
+  border: 1px solid #000;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#talk-to-me-tile-editor-window .ttm-conversation-participant h4 {
+  margin: 0 0 0.45rem;
+}
+
+#talk-to-me-tile-editor-window .ttm-editor-conversation-sequence,
+#talk-to-me-tile-editor-window .ttm-editor-advanced-conversation {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+
+/* Movement route editor */
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-route-picker-group,
+#talk-to-me-tile-editor-window .ttm-route-picker-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+  align-items: stretch;
+  padding: 0.65rem;
+  border: 1px solid rgba(120, 180, 255, 0.35);
+  border-radius: 6px;
+  background: rgba(20, 30, 45, 0.6);
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-route-picker-heading,
+#talk-to-me-tile-editor-window .ttm-route-picker-heading {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-route-picker-status,
+#talk-to-me-tile-editor-window .ttm-route-picker-status {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(255, 255, 255, 0.78);
+  text-align: center;
+  white-space: normal;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-route-picker-status-ready,
+#talk-to-me-tile-editor-window .ttm-route-picker-status-ready {
+  color: #bfffd0;
+  background: rgba(34, 110, 58, 0.28);
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-route-action-button,
+#talk-to-me-tile-editor-window .ttm-route-action-button {
+  width: 100%;
+  min-width: 100%;
+  min-height: 40px;
+  height: auto;
+  padding: 0.55rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 100%;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: normal;
+  text-align: center;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-route-clear-button:disabled,
+#talk-to-me-tile-editor-window .ttm-route-clear-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+
+/* Tile menu controls */
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tile-menu-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-wide-menu-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0.55rem 0.75rem;
+  white-space: normal;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Node editor */
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) [data-panel="nodes"] {
+  min-width: 0;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-target-headings,
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-target-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 86px;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-target-headings {
+  margin-top: 0.7rem;
+  padding: 0 0.25rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-target-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.35rem 0 0.65rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-target-row {
+  padding: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-target-row select,
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-target-row input,
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-target-row button {
+  width: 100%;
+  min-width: 0;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-editor-button {
+  width: 100%;
+  min-height: 38px;
+  padding: 0.5rem 0.7rem;
+  white-space: normal;
+  font-weight: 700;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-editor-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+@media (max-width: 620px) {
+  :is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tile-menu-controls,
+  :is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-editor-actions {
+    grid-template-columns: 1fr;
+  }
+
+  :is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-target-headings {
+    display: none;
+  }
+
+  :is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-node-target-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Multi-use tile builder */
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-multi-action-list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0.65rem 0;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-multi-action-card {
+  padding: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-multi-action-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px;
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-multi-action-header select,
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-multi-action-header button {
+  width: 100%;
+  min-width: 0;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-multi-action-body {
+  display: grid;
+  gap: 0.45rem;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-multi-action-button {
+  width: 100%;
+  min-height: 40px;
+  padding: 0.55rem 0.75rem;
+  white-space: normal;
+  font-weight: 700;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-multi-action-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+@media (max-width: 620px) {
+  :is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-multi-action-buttons,
+  :is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-multi-action-header {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Wider main TalkToMe window */
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) {
+  width: min(660px, calc(100vw - 20px)) !important;
+  max-width: calc(100vw - 32px);
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-body {
+  min-width: 0;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tabs-permanent {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 760px) {
+  :is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tab-row-main {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  :is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tab {
+    min-height: 34px;
+  }
+}
+
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tab-spacer {
+  min-height: 34px;
+}
+
+/* Optional behaviour sections */
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-optional-section-disabled,
+#talk-to-me-tile-editor-window .ttm-optional-section-disabled {
+  opacity: 0.82;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-optional-section-disabled > label.checkbox,
+#talk-to-me-tile-editor-window
+  .ttm-optional-section-disabled > label.checkbox {
+  opacity: 1;
+  font-weight: 700;
+  margin-bottom: 0;
+}
+
+@media (max-width: 440px) {
+  :is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-tab-row-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Checkbox-led optional behaviour sections */
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-optional-section,
+#talk-to-me-tile-editor-window .ttm-optional-section {
+  margin: 0 0 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-optional-section-content,
+#talk-to-me-tile-editor-window .ttm-optional-section-content {
+  margin: 0;
+  padding: 0.5rem 0.65rem 0.4rem;
+  border: 0;
+  background: transparent;
+}
+
+:is(#talk-to-me-window, #talk-to-me-bubble-editor-window) .ttm-optional-section-content > label.checkbox:first-child,
+#talk-to-me-tile-editor-window
+  .ttm-optional-section-content > label.checkbox:first-child {
+  margin: 0;
+  padding: 0.15rem 0;
+  font-weight: 700;
+}
+
+
+/* Speech Bubble Editor layout additions.
+   All visual styling is inherited from the exact TalkToMe selectors above. */
+#talk-to-me-bubble-editor-window {
+  width: min(660px, calc(100vw - 20px));
+  max-height: 82vh;
+  z-index: 10030;
+}
+
+#talk-to-me-bubble-editor-window .ttm-body {
+  max-height: calc(82vh - 38px);
+}
+
+#talk-to-me-bubble-editor-window .ttm-bubble-editor-group {
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid #000;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+#talk-to-me-bubble-editor-window textarea {
+  min-height: 70px;
+}
