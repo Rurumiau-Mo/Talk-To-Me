@@ -1,0 +1,1214 @@
+// =============================================================================
+// Migration
+// =============================================================================
+// Upgrades older TalkToMe tile data to the current schema.
+
+import {
+  TTM_ID,
+  TTM_TILE_SCHEMA_VERSION,
+  TTM_WORLD_MIGRATION_VERSION
+} from "./constants.js";
+
+function clone(value) {
+  return foundry.utils.deepClone(value ?? {});
+}
+
+function numberOr(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function booleanOr(value, fallback) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function inferTemplate(utility, speech) {
+  if (utility.template) return utility.template;
+  if (utility.doorWallId || utility.doorAction) return "switch";
+  if (
+    utility.lightDim !== undefined
+    || utility.lightBright !== undefined
+    || utility.ambientLightId
+  ) return "light";
+  if (
+    utility.moveDestinationX !== undefined
+    || utility.moveDestinationY !== undefined
+  ) return "moveTokens";
+  if (
+    utility.teleportX !== undefined
+    || utility.teleportY !== undefined
+  ) return "teleport";
+  if (utility.saveDC !== undefined || utility.trapTarget) return "trap";
+  if (speech.managed === true || speech.mode || speech.tableId || speech.text) {
+    return "speech";
+  }
+  return "";
+}
+
+function inferTrigger(template, utility, speech) {
+  const trigger = speech.trigger ?? utility.trigger;
+  if (trigger) return trigger;
+
+  if (template === "switch" || template === "light" || template === "reset") {
+    return "switch";
+  }
+
+  if (template === "trap") return "trap";
+  if (template === "teleport" || template === "moveTokens") {
+    return "enter";
+  }
+  return "manual";
+}
+
+function currentTexture(tileDoc) {
+  return tileDoc.texture?.src ?? tileDoc.img ?? "";
+}
+
+function buildOriginalState(tileDoc, utility) {
+  const existing = clone(utility.originalState);
+  const inactiveImage =
+    existing.inactiveImage
+    ?? existing.image
+    ?? utility.inactiveImage
+    ?? utility.defaultImage
+    ?? currentTexture(tileDoc);
+
+  return foundry.utils.mergeObject(
+    existing,
+    {
+      active: booleanOr(existing.active, false),
+      image: inactiveImage,
+      inactiveImage,
+      activeImage:
+        existing.activeImage
+        ?? utility.activeImage
+        ?? "",
+      doorWallId:
+        existing.doorWallId
+        ?? utility.doorWallId
+        ?? "",
+      doorAction:
+        existing.doorAction
+        ?? utility.doorAction
+        ?? "toggle",
+      originalDoorState:
+        Number.isFinite(Number(existing.originalDoorState))
+          ? Number(existing.originalDoorState)
+          : null,
+      lightDim: numberOr(
+        existing.lightDim ?? utility.lightDim,
+        20
+      ),
+      lightBright: numberOr(
+        existing.lightBright ?? utility.lightBright,
+        10
+      ),
+      lightColor:
+        existing.lightColor
+        ?? utility.lightColor
+        ?? "#ffffff",
+      lightAlpha: numberOr(
+        existing.lightAlpha ?? utility.lightAlpha,
+        0.5
+      ),
+      lightAnimation:
+        existing.lightAnimation
+        ?? utility.lightAnimation
+        ?? "",
+      teleportX:
+        existing.teleportX
+        ?? utility.teleportX
+        ?? "",
+      teleportY:
+        existing.teleportY
+        ?? utility.teleportY
+        ?? "",
+      teleportOffsetX: numberOr(
+        existing.teleportOffsetX ?? utility.teleportOffsetX,
+        0
+      ),
+      teleportOffsetY: numberOr(
+        existing.teleportOffsetY ?? utility.teleportOffsetY,
+        0
+      ),
+      teleportAvoidTiles: booleanOr(
+        existing.teleportAvoidTiles
+          ?? utility.teleportAvoidTiles,
+        true
+      ),
+      teleportUseCooldown: booleanOr(
+        existing.teleportUseCooldown
+          ?? utility.teleportUseCooldown,
+        true
+      ),
+      teleportCooldownSeconds: numberOr(
+        existing.teleportCooldownSeconds
+          ?? utility.teleportCooldownSeconds,
+        3
+      ),
+      requirePlayerVision: booleanOr(
+        existing.requirePlayerVision
+          ?? utility.requirePlayerVision,
+        false
+      ),
+      hideBehindWalls: booleanOr(
+        existing.hideBehindWalls
+          ?? utility.hideBehindWalls,
+        true
+      ),
+      activationCooldownEnabled: booleanOr(
+        existing.activationCooldownEnabled
+          ?? utility.activationCooldownEnabled,
+        false
+      ),
+      activationCooldownSeconds: Math.max(
+        0.2,
+        numberOr(
+          existing.activationCooldownSeconds
+            ?? utility.activationCooldownSeconds,
+          1
+        )
+      )
+    },
+    { inplace: false }
+  );
+}
+
+// Schema migrations
+function migrateToVersion1(tileDoc, data) {
+  const utility = clone(data.utility);
+  const speech = clone(data.speech);
+  const template = inferTemplate(utility, speech);
+
+  if (!template) return data;
+
+  const trigger = inferTrigger(template, utility, speech);
+  const clickActivation =
+    speech.clickActivation
+    ?? utility.clickActivation
+    ?? "left";
+  const inactiveImage =
+    utility.inactiveImage
+    ?? utility.defaultImage
+    ?? speech.tileImage
+    ?? currentTexture(tileDoc);
+  const linkedId =
+    utility.linkedTriggerTileId
+    || utility.targetTileId
+    || "";
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      template,
+      trigger,
+      clickActivation,
+      active: booleanOr(utility.active, false),
+      inactiveImage,
+      defaultImage: utility.defaultImage ?? inactiveImage,
+      activeImage: utility.activeImage ?? "",
+      linkedTriggerTileId: linkedId,
+      targetTileId: linkedId,
+      requirePlayerVision: booleanOr(
+        utility.requirePlayerVision,
+        false
+      ),
+      hideBehindWalls: booleanOr(
+        utility.hideBehindWalls,
+        true
+      ),
+      activationCooldownEnabled: booleanOr(
+        utility.activationCooldownEnabled,
+        false
+      ),
+      activationCooldownSeconds: Math.max(
+        0.2,
+        numberOr(utility.activationCooldownSeconds, 1)
+      )
+    },
+    { inplace: false }
+  );
+
+  data.speech = foundry.utils.mergeObject(
+    speech,
+    {
+      managed: true,
+      name: speech.name ?? tileDoc.name ?? "TalkToMe Tile",
+      trigger,
+      clickActivation,
+      tileImage: speech.tileImage ?? inactiveImage,
+      mode: speech.mode ?? "table",
+      text: speech.text ?? "",
+      tableId: speech.tableId ?? "",
+      npcName: speech.npcName ?? "",
+      subjectTokenId: speech.subjectTokenId ?? "",
+      postChat: booleanOr(speech.postChat, false),
+      zoomToSpeaker: booleanOr(speech.zoomToSpeaker, false)
+    },
+    { inplace: false }
+  );
+
+  data.version = 1;
+  return data;
+}
+
+function migrateToVersion2(tileDoc, data) {
+  const utility = clone(data.utility);
+  const speech = clone(data.speech);
+  const template = inferTemplate(utility, speech);
+
+  if (!template) return data;
+
+  const linkedId =
+    utility.linkedTriggerTileId
+    || utility.targetTileId
+    || "";
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      linkedTriggerTileId: linkedId,
+      targetTileId: linkedId,
+      lightDim: numberOr(utility.lightDim, 20),
+      lightBright: numberOr(utility.lightBright, 10),
+      lightColor: utility.lightColor ?? "#ffffff",
+      lightAlpha: numberOr(utility.lightAlpha, 0.5),
+      lightAnimation: utility.lightAnimation ?? "",
+      saveAbility: utility.saveAbility ?? "dex",
+      saveDC: numberOr(utility.saveDC, 10),
+      trapTarget: utility.trapTarget ?? "triggering-token",
+      teleportOffsetX: numberOr(utility.teleportOffsetX, 0),
+      teleportOffsetY: numberOr(utility.teleportOffsetY, 0),
+      teleportAutoReset: booleanOr(
+        utility.teleportAutoReset,
+        true
+      ),
+      teleportResetSeconds: numberOr(
+        utility.teleportResetSeconds,
+        3
+      ),
+      teleportUseCooldown: booleanOr(
+        utility.teleportUseCooldown,
+        true
+      ),
+      teleportCooldownSeconds: numberOr(
+        utility.teleportCooldownSeconds,
+        3
+      ),
+      teleportAvoidTiles: booleanOr(
+        utility.teleportAvoidTiles,
+        true
+      ),
+      hotspotSize: Math.max(
+        8,
+        numberOr(utility.hotspotSize, 64)
+      ),
+      hotspotOffsetX: numberOr(utility.hotspotOffsetX, 0),
+      hotspotOffsetY: numberOr(utility.hotspotOffsetY, 0)
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = buildOriginalState(
+    tileDoc,
+    data.utility
+  );
+  data.version = 2;
+  return data;
+}
+
+function migrateToVersion3(tileDoc, data) {
+  const speech = clone(data.speech);
+
+  data.speech = foundry.utils.mergeObject(
+    speech,
+    {
+      conversationEnabled: booleanOr(
+        speech.conversationEnabled,
+        false
+      ),
+      conversationId: speech.conversationId ?? "",
+      conversationStart: booleanOr(
+        speech.conversationStart,
+        false
+      ),
+      conversationStartNode:
+        speech.conversationStartNode
+        ?? "start",
+      conversationNextTileId:
+        speech.conversationNextTileId
+        ?? ""
+    },
+    { inplace: false }
+  );
+
+  data.version = 3;
+  return data;
+}
+
+function migrateToVersion4(tileDoc, data) {
+  const speech = clone(data.speech);
+
+  data.speech = foundry.utils.mergeObject(
+    speech,
+    {
+      conversationSequenceEnabled: booleanOr(
+        speech.conversationSequenceEnabled,
+        false
+      ),
+      conversationParticipants: Array.isArray(
+        speech.conversationParticipants
+      )
+        ? speech.conversationParticipants.slice(0, 5)
+        : [],
+      conversationOrder: Array.isArray(
+        speech.conversationOrder
+      )
+        ? speech.conversationOrder
+        : [],
+      conversationLineDelay: Math.max(
+        0.25,
+        numberOr(speech.conversationLineDelay, 3)
+      )
+    },
+    { inplace: false }
+  );
+
+  data.version = 4;
+  return data;
+}
+
+function migrateToVersion5(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      multipleUse: booleanOr(utility.multipleUse, true),
+      usedOnce: booleanOr(utility.usedOnce, false)
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      multipleUse: booleanOr(
+        data.utility.originalState?.multipleUse
+          ?? utility.multipleUse,
+        true
+      )
+    },
+    { inplace: false }
+  );
+
+  data.version = 5;
+  return data;
+}
+
+function migrateToVersion6(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      globalLightAction:
+        utility.globalLightAction ?? "toggle",
+      globalDarkness: Math.max(
+        0,
+        Math.min(
+          1,
+          numberOr(utility.globalDarkness, 0.75)
+        )
+      ),
+      globalLightColorOverride: booleanOr(
+        utility.globalLightColorOverride,
+        false
+      ),
+      globalLightColor:
+        utility.globalLightColor ?? "#ffffff",
+      globalLightFadeSeconds: Math.max(
+        0,
+        numberOr(utility.globalLightFadeSeconds, 0)
+      )
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      globalLightAction:
+        data.utility.originalState?.globalLightAction
+        ?? data.utility.globalLightAction,
+      globalDarkness:
+        data.utility.originalState?.globalDarkness
+        ?? data.utility.globalDarkness,
+      globalLightColorOverride: booleanOr(
+        data.utility.originalState?.globalLightColorOverride
+          ?? data.utility.globalLightColorOverride,
+        false
+      ),
+      globalLightColor:
+        data.utility.originalState?.globalLightColor
+        ?? data.utility.globalLightColor,
+      globalLightFadeSeconds:
+        data.utility.originalState?.globalLightFadeSeconds
+        ?? data.utility.globalLightFadeSeconds
+    },
+    { inplace: false }
+  );
+
+  data.version = 6;
+  return data;
+}
+
+function migrateToVersion7(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      globalLightUseFoundryFade: true
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      globalLightUseFoundryFade: true
+    },
+    { inplace: false }
+  );
+
+  data.version = 7;
+  return data;
+}
+
+function migrateToVersion8(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      moveDestinationX:
+        utility.moveDestinationX ?? "",
+      moveDestinationY:
+        utility.moveDestinationY ?? "",
+      moveTargetMode:
+        utility.moveTargetMode ?? "triggering-token",
+      moveOffsetX: numberOr(utility.moveOffsetX, 0),
+      moveOffsetY: numberOr(utility.moveOffsetY, 0),
+      moveSpacing: Math.max(
+        0,
+        numberOr(utility.moveSpacing, 100)
+      )
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      moveDestinationX:
+        data.utility.originalState?.moveDestinationX
+        ?? data.utility.moveDestinationX,
+      moveDestinationY:
+        data.utility.originalState?.moveDestinationY
+        ?? data.utility.moveDestinationY,
+      moveTargetMode:
+        data.utility.originalState?.moveTargetMode
+        ?? data.utility.moveTargetMode,
+      moveOffsetX: numberOr(
+        data.utility.originalState?.moveOffsetX
+          ?? data.utility.moveOffsetX,
+        0
+      ),
+      moveOffsetY: numberOr(
+        data.utility.originalState?.moveOffsetY
+          ?? data.utility.moveOffsetY,
+        0
+      ),
+      moveSpacing: Math.max(
+        0,
+        numberOr(
+          data.utility.originalState?.moveSpacing
+            ?? data.utility.moveSpacing,
+          100
+        )
+      )
+    },
+    { inplace: false }
+  );
+
+  data.version = 8;
+  return data;
+}
+
+function migrateToVersion9(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      moveTokenIds: Array.isArray(utility.moveTokenIds)
+        ? utility.moveTokenIds
+        : []
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      moveTokenIds: Array.isArray(
+        data.utility.originalState?.moveTokenIds
+      )
+        ? data.utility.originalState.moveTokenIds
+        : data.utility.moveTokenIds
+    },
+    { inplace: false }
+  );
+
+  data.version = 9;
+  return data;
+}
+
+function migrateToVersion10(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      moveRoute: Array.isArray(utility.moveRoute)
+        ? utility.moveRoute
+        : [],
+      moveAutoRotate: booleanOr(
+        utility.moveAutoRotate,
+        false
+      )
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      moveRoute: Array.isArray(
+        data.utility.originalState?.moveRoute
+      )
+        ? data.utility.originalState.moveRoute
+        : data.utility.moveRoute,
+      moveAutoRotate: booleanOr(
+        data.utility.originalState?.moveAutoRotate
+          ?? data.utility.moveAutoRotate,
+        false
+      )
+    },
+    { inplace: false }
+  );
+
+  data.version = 10;
+  return data;
+}
+
+function migrateToVersion11(tileDoc, data) {
+  const utility = clone(data.utility);
+  const defaults = [
+    "players",
+    "npcs",
+    "groups",
+    "vehicles"
+  ];
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      activationActorTypes: Array.isArray(
+        utility.activationActorTypes
+      )
+        ? utility.activationActorTypes
+        : defaults
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      activationActorTypes: Array.isArray(
+        data.utility.originalState?.activationActorTypes
+      )
+        ? data.utility.originalState.activationActorTypes
+        : data.utility.activationActorTypes
+    },
+    { inplace: false }
+  );
+
+  data.version = 11;
+  return data;
+}
+
+function migrateToVersion12(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      spawnActorId: utility.spawnActorId ?? "",
+      spawnQuantity: Math.max(1, Math.min(50, numberOr(utility.spawnQuantity, 1))),
+      spawnX: utility.spawnX ?? "",
+      spawnY: utility.spawnY ?? "",
+      spawnFormation: utility.spawnFormation ?? "grid",
+      spawnSpacing: Math.max(0, numberOr(utility.spawnSpacing, 100)),
+      spawnHidden: booleanOr(utility.spawnHidden, false),
+      spawnRemoveOnReset: booleanOr(utility.spawnRemoveOnReset, true),
+      spawnedTokenIds: Array.isArray(utility.spawnedTokenIds)
+        ? utility.spawnedTokenIds
+        : []
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      spawnActorId: data.utility.spawnActorId,
+      spawnQuantity: data.utility.spawnQuantity,
+      spawnX: data.utility.spawnX,
+      spawnY: data.utility.spawnY,
+      spawnFormation: data.utility.spawnFormation,
+      spawnSpacing: data.utility.spawnSpacing,
+      spawnHidden: data.utility.spawnHidden,
+      spawnRemoveOnReset: data.utility.spawnRemoveOnReset
+    },
+    { inplace: false }
+  );
+
+  data.version = 12;
+  return data;
+}
+
+function migrateToVersion13(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      soundEnabled: booleanOr(
+        utility.soundEnabled,
+        false
+      ),
+      soundFile: utility.soundFile ?? "",
+      soundVolume: Math.max(
+        0,
+        Math.min(1, numberOr(utility.soundVolume, 0.8))
+      ),
+      animationEnabled: booleanOr(
+        utility.animationEnabled,
+        false
+      ),
+      animationType: utility.animationType ?? "none",
+      animationDuration: Math.max(
+        0.15,
+        numberOr(utility.animationDuration, 0.7)
+      )
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      soundEnabled: booleanOr(
+        data.utility.originalState?.soundEnabled
+          ?? data.utility.soundEnabled,
+        false
+      ),
+      soundFile:
+        data.utility.originalState?.soundFile
+        ?? data.utility.soundFile,
+      soundVolume: Math.max(
+        0,
+        Math.min(
+          1,
+          numberOr(
+            data.utility.originalState?.soundVolume
+              ?? data.utility.soundVolume,
+            0.8
+          )
+        )
+      ),
+      animationEnabled: booleanOr(
+        data.utility.originalState?.animationEnabled
+          ?? data.utility.animationEnabled,
+        false
+      ),
+      animationType:
+        data.utility.originalState?.animationType
+        ?? data.utility.animationType,
+      animationDuration: Math.max(
+        0.15,
+        numberOr(
+          data.utility.originalState?.animationDuration
+            ?? data.utility.animationDuration,
+          0.7
+        )
+      )
+    },
+    { inplace: false }
+  );
+
+  data.version = 13;
+  return data;
+}
+
+function migrateToVersion14(tileDoc, data) {
+  const utility = clone(data.utility);
+  const effectsEnabled =
+    utility.effectsEnabled === true
+    || utility.soundEnabled === true
+    || utility.animationEnabled === true;
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      effectsEnabled
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      effectsEnabled:
+        data.utility.originalState?.effectsEnabled === true
+        || data.utility.originalState?.soundEnabled === true
+        || data.utility.originalState?.animationEnabled === true
+        || effectsEnabled
+    },
+    { inplace: false }
+  );
+
+  data.version = 14;
+  return data;
+}
+
+function migrateToVersion15(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      trapType:
+        utility.template === "magic"
+          ? "magical"
+          : (utility.trapType ?? "mundane"),
+      magicCasterTokenId:
+        utility.magicCasterTokenId ?? "",
+      magicSpellItemId:
+        utility.magicSpellItemId ?? "",
+      magicActivityId:
+        utility.magicActivityId ?? ""
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      magicCasterTokenId:
+        data.utility.originalState?.magicCasterTokenId
+        ?? data.utility.magicCasterTokenId,
+      magicSpellItemId:
+        data.utility.originalState?.magicSpellItemId
+        ?? data.utility.magicSpellItemId,
+      magicActivityId:
+        data.utility.originalState?.magicActivityId
+        ?? data.utility.magicActivityId
+    },
+    { inplace: false }
+  );
+
+  data.version = 15;
+  return data;
+}
+
+function migrateToVersion16(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      magicTargetMode:
+        utility.magicTargetMode ?? "none",
+      magicTemplateType:
+        utility.magicTemplateType ?? "none",
+      magicTemplateOrigin:
+        utility.magicTemplateOrigin ?? "tile",
+      magicTemplateX:
+        utility.magicTemplateX ?? "",
+      magicTemplateY:
+        utility.magicTemplateY ?? "",
+      magicTemplateDistance:
+        numberOr(utility.magicTemplateDistance, 20),
+      magicTemplateAngle:
+        numberOr(utility.magicTemplateAngle, 90),
+      magicTemplateWidth:
+        numberOr(utility.magicTemplateWidth, 5),
+      magicTemplateDirection:
+        numberOr(utility.magicTemplateDirection, 0)
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      magicTargetMode:
+        data.utility.originalState?.magicTargetMode
+        ?? data.utility.magicTargetMode,
+      magicTemplateType:
+        data.utility.originalState?.magicTemplateType
+        ?? data.utility.magicTemplateType,
+      magicTemplateOrigin:
+        data.utility.originalState?.magicTemplateOrigin
+        ?? data.utility.magicTemplateOrigin,
+      magicTemplateX:
+        data.utility.originalState?.magicTemplateX
+        ?? data.utility.magicTemplateX,
+      magicTemplateY:
+        data.utility.originalState?.magicTemplateY
+        ?? data.utility.magicTemplateY,
+      magicTemplateDistance:
+        numberOr(
+          data.utility.originalState?.magicTemplateDistance
+          ?? data.utility.magicTemplateDistance,
+          20
+        ),
+      magicTemplateAngle:
+        numberOr(
+          data.utility.originalState?.magicTemplateAngle
+          ?? data.utility.magicTemplateAngle,
+          90
+        ),
+      magicTemplateWidth:
+        numberOr(
+          data.utility.originalState?.magicTemplateWidth
+          ?? data.utility.magicTemplateWidth,
+          5
+        ),
+      magicTemplateDirection:
+        numberOr(
+          data.utility.originalState?.magicTemplateDirection
+          ?? data.utility.magicTemplateDirection,
+          0
+        )
+    },
+    { inplace: false }
+  );
+
+  data.version = 16;
+  return data;
+}
+
+function migrateToVersion17(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      magicCastLevel:
+        utility.magicCastLevel ?? "auto",
+      magicConsumeSlot:
+        booleanOr(utility.magicConsumeSlot, true),
+      magicConfigureDialog:
+        booleanOr(utility.magicConfigureDialog, false)
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      magicCastLevel:
+        data.utility.originalState?.magicCastLevel
+        ?? data.utility.magicCastLevel,
+      magicConsumeSlot:
+        booleanOr(
+          data.utility.originalState?.magicConsumeSlot
+          ?? data.utility.magicConsumeSlot,
+          true
+        ),
+      magicConfigureDialog:
+        booleanOr(
+          data.utility.originalState?.magicConfigureDialog
+          ?? data.utility.magicConfigureDialog,
+          false
+        )
+    },
+    { inplace: false }
+  );
+
+  data.version = 17;
+  return data;
+}
+
+function migrateToVersion18(tileDoc, data) {
+  const utility = clone(data.utility);
+
+  data.utility = foundry.utils.mergeObject(
+    utility,
+    {
+      magicAutoCast:
+        utility.magicConfigureDialog === true
+          ? false
+          : booleanOr(utility.magicAutoCast, true)
+    },
+    { inplace: false }
+  );
+
+  data.utility.originalState = foundry.utils.mergeObject(
+    data.utility.originalState ?? {},
+    {
+      magicAutoCast:
+        data.utility.originalState?.magicConfigureDialog === true
+          ? false
+          : booleanOr(
+            data.utility.originalState?.magicAutoCast
+            ?? data.utility.magicAutoCast,
+            true
+          )
+    },
+    { inplace: false }
+  );
+
+  data.version = 18;
+  return data;
+}
+
+function migrateToVersion19(tileDoc, data) {
+  const speech = clone(data.speech);
+
+  data.speech = foundry.utils.mergeObject(
+    speech,
+    {
+      typingAnimation:
+        booleanOr(speech.typingAnimation, false)
+    },
+    { inplace: false }
+  );
+
+  data.version = 19;
+  return data;
+}
+
+function isTalkToMeTile(tileDoc) {
+  const root = tileDoc.flags?.[TTM_ID] ?? {};
+  const utility = root.utility ?? {};
+  const speech = root.speech ?? {};
+
+  return Boolean(
+    utility.template
+    || speech.managed
+    || speech.mode
+    || speech.tableId
+    || speech.text
+    || utility.doorWallId
+    || utility.teleportX !== undefined
+    || utility.lightDim !== undefined
+  );
+}
+
+export function buildTileMigration(tileDoc) {
+  if (!isTalkToMeTile(tileDoc)) return null;
+
+  const root = clone(tileDoc.flags?.[TTM_ID]);
+  const fromVersion = numberOr(root.dataVersion, 0);
+
+  if (fromVersion >= TTM_TILE_SCHEMA_VERSION) {
+    return null;
+  }
+
+  let data = {
+    version: fromVersion,
+    utility: clone(root.utility),
+    speech: clone(root.speech)
+  };
+
+  if (data.version < 1) data = migrateToVersion1(tileDoc, data);
+  if (data.version < 2) data = migrateToVersion2(tileDoc, data);
+  if (data.version < 3) data = migrateToVersion3(tileDoc, data);
+  if (data.version < 4) data = migrateToVersion4(tileDoc, data);
+  if (data.version < 5) data = migrateToVersion5(tileDoc, data);
+  if (data.version < 6) data = migrateToVersion6(tileDoc, data);
+  if (data.version < 7) data = migrateToVersion7(tileDoc, data);
+  if (data.version < 8) data = migrateToVersion8(tileDoc, data);
+  if (data.version < 9) data = migrateToVersion9(tileDoc, data);
+  if (data.version < 10) data = migrateToVersion10(tileDoc, data);
+  if (data.version < 11) data = migrateToVersion11(tileDoc, data);
+  if (data.version < 12) data = migrateToVersion12(tileDoc, data);
+  if (data.version < 13) data = migrateToVersion13(tileDoc, data);
+  if (data.version < 14) data = migrateToVersion14(tileDoc, data);
+  if (data.version < 15) data = migrateToVersion15(tileDoc, data);
+  if (data.version < 16) data = migrateToVersion16(tileDoc, data);
+  if (data.version < 17) data = migrateToVersion17(tileDoc, data);
+  if (data.version < 18) data = migrateToVersion18(tileDoc, data);
+  if (data.version < 19) data = migrateToVersion19(tileDoc, data);
+
+  return {
+    _id: tileDoc.id,
+    [`flags.${TTM_ID}.dataVersion`]: TTM_TILE_SCHEMA_VERSION,
+    [`flags.${TTM_ID}.utility`]: data.utility,
+    [`flags.${TTM_ID}.speech`]: data.speech
+  };
+}
+
+// Migrate one scene
+export async function migrateScene(scene, {
+  dryRun = false
+} = {}) {
+  const updates = [];
+  const failures = [];
+
+  for (const tileDoc of scene.tiles?.contents ?? []) {
+    try {
+      const update = buildTileMigration(tileDoc);
+      if (update) updates.push(update);
+    } catch (error) {
+      failures.push({
+        sceneId: scene.id,
+        sceneName: scene.name,
+        tileId: tileDoc.id,
+        tileName: tileDoc.name,
+        error
+      });
+    }
+  }
+
+  let migrated = updates.length;
+
+  if (!dryRun && updates.length) {
+    try {
+      await scene.updateEmbeddedDocuments("Tile", updates);
+    } catch (error) {
+      failures.push({
+        sceneId: scene.id,
+        sceneName: scene.name,
+        tileId: null,
+        tileName: null,
+        error
+      });
+      migrated = 0;
+    }
+  }
+
+  return {
+    sceneId: scene.id,
+    sceneName: scene.name,
+    scanned: scene.tiles?.size ?? 0,
+    migrated,
+    failures
+  };
+}
+
+// Migrate all scenes
+export async function migrateWorld({
+  dryRun = false,
+  notify = true,
+  force = false
+} = {}) {
+  if (!game.user?.isGM) {
+    if (notify) {
+      ui.notifications.warn(
+        "Only a GM can run TalkToMe data migrations."
+      );
+    }
+    return null;
+  }
+
+  const storedVersion = numberOr(
+    game.settings.get(TTM_ID, "worldDataVersion"),
+    0
+  );
+
+  if (
+    !force
+    && !dryRun
+    && storedVersion >= TTM_WORLD_MIGRATION_VERSION
+  ) {
+    return {
+      fromVersion: storedVersion,
+      toVersion: TTM_WORLD_MIGRATION_VERSION,
+      scenes: 0,
+      scanned: 0,
+      migrated: 0,
+      failures: []
+    };
+  }
+
+  const reports = [];
+
+  for (const scene of game.scenes?.contents ?? []) {
+    reports.push(await migrateScene(scene, { dryRun }));
+  }
+
+  const report = {
+    fromVersion: storedVersion,
+    toVersion: TTM_WORLD_MIGRATION_VERSION,
+    scenes: reports.length,
+    scanned: reports.reduce(
+      (sum, item) => sum + item.scanned,
+      0
+    ),
+    migrated: reports.reduce(
+      (sum, item) => sum + item.migrated,
+      0
+    ),
+    failures: reports.flatMap(item => item.failures),
+    dryRun
+  };
+
+  if (!dryRun && report.failures.length === 0) {
+    await game.settings.set(
+      TTM_ID,
+      "worldDataVersion",
+      TTM_WORLD_MIGRATION_VERSION
+    );
+  }
+
+  console.log("TalkToMe migration report", report);
+
+  if (notify) {
+    if (report.failures.length) {
+      ui.notifications.warn(
+        `TalkToMe migrated ${report.migrated} tile(s), `
+        + `with ${report.failures.length} failure(s).`
+      );
+    } else {
+      ui.notifications.info(
+        dryRun
+          ? `TalkToMe migration preview found `
+            + `${report.migrated} tile(s) to update.`
+          : `TalkToMe migration complete: `
+            + `${report.migrated} tile(s) updated.`
+      );
+    }
+  }
+
+  return report;
+}
+
+export async function runAutomaticMigration() {
+  if (!game.user?.isGM) return null;
+
+  const activeGM = game.users?.activeGM;
+  if (activeGM && activeGM.id !== game.user.id) return null;
+
+  return migrateWorld({
+    dryRun: false,
+    notify: false,
+    force: false
+  });
+}
